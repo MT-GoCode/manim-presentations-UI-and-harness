@@ -221,8 +221,8 @@ def test_scene_processes_never_import_from_the_cwd_or_the_live_talk(talk, tmp_pa
     root = talk("edge", "path-probe")
     cwd = tmp_path / "cwd"
     cwd.mkdir()
-    env = {**os.environ, "MPRES_TEST_FORBIDDEN": os.pathsep.join([str(cwd), str(root)])}
-    ok(build(root, env=env, cwd=cwd))  # pass 1 and the worker both run the probe
+    (root / "assets" / "forbidden.txt").write_text(os.pathsep.join([str(cwd), str(root)]))
+    ok(build(root, cwd=cwd))  # pass 1 and the worker both run the probe
 
 
 def test_a_missing_clip_renders_exactly_its_beat_again(prebuilt):
