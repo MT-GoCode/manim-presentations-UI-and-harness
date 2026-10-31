@@ -5,5 +5,5 @@ from manim import FadeIn, Square
 
 def construct(talk):
     talk.beat("waits")
-    time.sleep(6)  # holds pass 1 open long enough for a test to kill the build parent mid-pass
+    time.sleep(600)  # far longer than any test waits: only the parent-death watch or a kill ends it
     talk.play(FadeIn(Square(1)))

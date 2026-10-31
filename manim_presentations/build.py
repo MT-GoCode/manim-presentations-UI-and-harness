@@ -133,6 +133,7 @@ def spawn(job: Job, out: Path, env: dict[str, str]) -> int:
         (os.POSIX_SPAWN_OPEN, 2, str(out / "stderr"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
     ]
     argv = [sys.executable, "-P", "-m", f"manim_presentations.{job.module}", *job.args]
+    env = {**env, "MPRES_BUILD_PID": str(os.getpid())}
     return os.posix_spawn(sys.executable, argv, env, file_actions=actions, setsid=True)
 
 
@@ -306,7 +307,9 @@ def fingerprint(identity: dict[str, str], settings: Settings, beat: BeatRecord) 
     """A beat's frames as pass 1 recorded them, plus everything after the frames that shapes its clip's bytes: the
     render settings, clip.py and the drawing and encoding libraries (clip.identity). Nothing else from the engine."""
     render = [settings.pixel_width, settings.pixel_height, settings.frame_rate, settings.background]
-    return hashlib.sha256(json.dumps([identity, render, beat.drawn], sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps([identity, render, [a.digest for a in beat.animations]], sort_keys=True).encode()
+    ).hexdigest()
 
 
 def build(talk: Path, workers: int | None) -> int:
@@ -383,7 +386,7 @@ def build(talk: Path, workers: int | None) -> int:
                 f'{r.file}:{b.line} beat "{b.slug}" has no animation; give it one (talk.wait() holds the frame)',
             )
             for b in r.beats
-            if not b.run_times
+            if not b.animations
         ]
         findings += geometry.check(r.beats, settings.frame_width, settings.frame_height, settings.pixel_width)
     if findings:
@@ -396,7 +399,10 @@ def build(talk: Path, workers: int | None) -> int:
     reused = {key for key, fp in prints.items() if fp in old_beats and layout.clip(old_beats[fp].clip).exists()}
     to_render = {
         r.chapter: {
-            b.first_anim + j: t for b in r.beats if (r.chapter, b.slug) not in reused for j, t in enumerate(b.run_times)
+            b.first_anim + j: t
+            for b in r.beats
+            if (r.chapter, b.slug) not in reused
+            for j, t in enumerate(a.run_time for a in b.animations)
         }
         for r in records
     }
@@ -417,19 +423,24 @@ def build(talk: Path, workers: int | None) -> int:
         if (r.chapter, b.slug) in reused:
             sha = old_beats[fp].clip
         else:
-            parts = [Path(reports[(r.chapter, b.first_anim + j)]) for j in range(len(b.run_times))]
+            parts = [Path(reports[(r.chapter, b.first_anim + j)]) for j in range(len(b.animations))]
             tmp = layout.media / "joined" / f"{r.chapter}-{b.slug}.mp4"
             tmp.parent.mkdir(exist_ok=True)
             frames = clip.join(parts, tmp)
-            if frames != sum(b.frames):
+            total = sum(a.frames for a in b.animations)
+            if frames != total:
                 raise BuildError(
-                    1, [f"{r.file}:{b.line} beat {b.slug}: joined {frames} frames, pass 1 wrote {sum(b.frames)}"]
+                    1,
+                    [f"{r.file}:{b.line} beat {b.slug}: joined {frames} frames, pass 1 wrote {total}"],
                 )
             if errs := clip.stream_check(tmp, settings):
                 raise BuildError(1, [f"{r.file}:{b.line} beat {b.slug}: stream check failed: {'; '.join(errs)}"])
             sha = sha256(tmp)
             os.replace(tmp, layout.clip(sha))  # verified, hashed, then at its content address
-        ends: tuple[tuple[Literal["first", "last"], int], ...] = (("first", 0), ("last", sum(b.frames) - 1))
+        ends: tuple[tuple[Literal["first", "last"], int], ...] = (
+            ("first", 0),
+            ("last", sum(a.frames for a in b.animations) - 1),
+        )
         for which, index in ends:
             if not (still := layout.still(sha, STILLS_HASH, which)).exists():
                 stills.still_at(layout.clip(sha), index, still)
@@ -439,7 +450,7 @@ def build(talk: Path, workers: int | None) -> int:
             title=titles[b.slug],
             kind=b.kind,
             fingerprint=fp,
-            frames=sum(b.frames),
+            frames=sum(a.frames for a in b.animations),
             clip=sha,
             first_png=str(layout.still(sha, STILLS_HASH, "first").relative_to(layout.build)),
             last_png=str(layout.still(sha, STILLS_HASH, "last").relative_to(layout.build)),
@@ -470,8 +481,8 @@ def build(talk: Path, workers: int | None) -> int:
         )
         collected = layout.gc(keep, layout.live_pins(), cid)
     pruned = prune_cache(shared, records)
-    os.close(lock)
     shutil.rmtree(layout.media, ignore_errors=True)
+    os.close(lock)  # last: the next build may wipe .media only once this one is done with it
     say(
         f"commit: {collected} old files collected · {pruned} unused cache entries pruned · {time.monotonic() - t4:.2f}s"
     )
@@ -530,7 +541,10 @@ def render(
 
     done, peak = run_all(jobs, width, env, layout, "render", progress)
     expected = {
-        (r.chapter, b.first_anim + j): (r.file, b, d) for r in records for b in r.beats for j, d in enumerate(b.drawn)
+        (r.chapter, b.first_anim + j): (r.file, b, d)
+        for r in records
+        for b in r.beats
+        for j, d in enumerate(a.digest for a in b.animations)
     }
     reports: dict[tuple[str, int], str] = {}
     for k, ch in enumerate(chunks):
@@ -564,6 +578,7 @@ def table(script: Script, records: list[ChapterRecord], reused: set[tuple[str, s
             n += 1
             state = "reused" if (r.chapter, b.slug) in reused else "rendered"
             say(
-                f"{n:>3}  {b.slug:<24} {b.kind:<4}  {len(b.run_times):>2} anim  {sum(b.run_times):6.2f}s  "
+                f"{n:>3}  {b.slug:<24} {b.kind:<4}  {len(b.animations):>2} anim  "
+                f"{sum(a.run_time for a in b.animations):6.2f}s  "
                 f"{state:<8}  {r.file}:{b.line}"
             )

@@ -11,7 +11,6 @@ import sys
 if __name__ == "__main__":
     os.chdir(sys.argv[1])
 
-import tempfile
 import threading
 from os.path import realpath
 from pathlib import Path
@@ -23,8 +22,10 @@ EXCLUSIVE_CREATE = os.O_CREAT | os.O_EXCL
 
 
 def watch_parent() -> None:
-    """A killed build never leaves a pass-1 child writing into build/.media (vendored from Explainers' render.py)."""
-    parent = os.getppid()
+    """A killed build never leaves a scene process writing into build/.media (vendored from Explainers' render.py).
+    The parent's pid comes from the parent itself: a child that started after its parent died would otherwise read
+    launchd's pid as its parent and never notice."""
+    parent = int(os.environ["MPRES_BUILD_PID"])
 
     def watch() -> None:
         while True:
@@ -36,8 +37,8 @@ def watch_parent() -> None:
 
 
 def cannot_read(flags: int) -> bool:
-    """An open that cannot return existing bytes: write-only, or an exclusive create (`tempfile` probes its directory
-    with O_RDWR | O_CREAT | O_EXCL, which only ever makes a new, empty file)."""
+    """An open that cannot return existing bytes: write-only, or an exclusive create (O_RDWR | O_CREAT | O_EXCL only
+    ever makes a new, empty file; `tempfile` opens its files that way)."""
     return flags & os.O_ACCMODE == os.O_WRONLY or flags & EXCLUSIVE_CREATE == EXCLUSIVE_CREATE
 
 
@@ -56,7 +57,6 @@ class ReadGuard:
             realpath(p) for p in (snapshot, sys.prefix, sys.base_prefix, package, tinytex, cache, *SYSTEM_ROOTS)
         )
         self.listing_roots = tuple(realpath(p) for p in sys.path if p)  # importlib scans every sys.path entry
-        self.write_roots = (realpath(tempfile.gettempdir()),)
         self.active = False
         self.violations: list[str] = []
         self.cache_entries: set[str] = set()
@@ -68,13 +68,12 @@ class ReadGuard:
         if not isinstance(path, (str, bytes, os.PathLike)):  # a file descriptor or None: already opened, or cwd
             return
         p = realpath(os.fsdecode(path))
-        if p.startswith(self.cache + os.sep):
-            self.cache_entries.add(os.path.basename(p))
-        roots = self.roots
-        if event != "open":
-            roots += self.listing_roots
-        elif cannot_read(args[2]):
-            roots += self.write_roots
+        if event == "open":
+            if p.startswith(self.cache + os.sep):
+                self.cache_entries.add(os.path.basename(p))
+            if cannot_read(args[2]):  # only reads are checked; writes are confined by dry_run and media_dir
+                return
+        roots = self.roots + (self.listing_roots if event != "open" else ())
         if not any(p == r or p.startswith(r + os.sep) for r in roots):
             self.violations.append(p)
             raise PermissionError(f"a talk reads only files inside its own folder; {p} is outside it")

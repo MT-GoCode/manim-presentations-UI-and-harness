@@ -4,6 +4,7 @@ stops firing after a Manim upgrade."""
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -70,7 +71,7 @@ def test_render_config_ignores_a_user_manim_cfg(tmp_path):
     """A hostile user config, merged in at `import manim`, never reaches the render settings."""
     cfg = tmp_path / ".config" / "manim"
     cfg.mkdir(parents=True)
-    (cfg / "manim.cfg").write_text("[CLI]\nframe_rate = 7\npixel_width = 100\nbackground_color = #FF0000\n")
+    (cfg / "manim.cfg").write_text("[CLI]\nframe_rate = 7\nzero_pad = 9\nwrite_all = True\nsave_last_frame = True\n")
     code = (
         "from manim import config\nfrom manim_presentations import clip\nfrom manim_presentations.settings import "
         f"Settings\nclip.render_config(Settings.model_validate_json({SETTINGS.model_dump_json()!r}))\n"
@@ -83,7 +84,7 @@ def test_render_config_ignores_a_user_manim_cfg(tmp_path):
         text=True,
         check=True,
     ).stdout.split()
-    assert out == ["30", "480", "#000000"]
+    assert out == ["30", "4", "False", "False"]  # keys render_config does not set are still Manim's defaults
 
 
 def test_creation_lines_name_the_chapter_line_even_inside_a_helper(tmp_path, monkeypatch):
@@ -199,9 +200,72 @@ def test_pass1_writes_no_bytecode(tmp_path):
             str(tinytex),
             str(out),
         ],
+        env={**os.environ, "MPRES_BUILD_PID": str(os.getpid())},
         capture_output=True,
         text=True,
     )
     assert r.returncode == 0, r.stderr
     assert (out / "records.json").exists()
     assert not list(snap.rglob("__pycache__"))
+
+
+def tee_run(build_scene, first: int) -> tuple[list[str], float, dict[int, str], list[str]]:
+    """Render plays from `first` on through TeeContext after exact fast-forward: (digests of the rendered plays, the
+    renderer's clock at the end, the partial-file mapping, pass 1's digests of the same plays)."""
+    clip.render_config(SETTINGS)
+    pass1 = [d for d, _ in digests(build_scene)]
+    out: list[str] = []
+    with tempconfig({"from_animation_number": first, "media_dir": tempfile.mkdtemp()}):
+
+        class S(Scene):
+            def construct(self):
+                build_scene(self)
+
+        s = S()
+        tee = clip.TeeContext(s)
+        manim_hooks.exact_fast_forward(s)
+        play = s.play
+
+        def recorded(*a, **k):
+            n = s.renderer.num_plays
+            play(*a, **k)
+            if n >= first:
+                out.append(tee.play_digest()[0])
+            else:
+                tee.play_digest()
+
+        s.play = recorded
+        s.render()
+        return out, s.renderer.time, manim_hooks.partial_files(s), pass1[first:]
+
+
+def stateful(s):
+    sq = Square()
+    sq.add_updater(lambda m, dt: m.rotate(dt))  # per-frame state a one-step skip would not reproduce
+    s.add(sq)
+    s.play(FadeIn(Circle()))
+    s.wait(0.5)
+    ticks = {"n": 0}
+
+    def stop():
+        ticks["n"] += 1
+        return ticks["n"] > 7  # wait_until stops mid-wait, after a frame-dependent count
+
+    s.wait_until(stop, max_time=2)
+    s.play(sq.animate.shift([1, 0, 0]))
+
+
+def test_exact_fast_forward_reproduces_pass1_and_its_clock():
+    got, clock, partials, want = tee_run(stateful, 3)
+    assert got == want
+    full_clock = tee_run(stateful, 0)[1]
+    assert clock == full_clock  # time-keeping: the fast-forwarded plays advanced the clock exactly as rendered ones
+    assert sorted(partials) == [3]  # the partial-file mapping holds only the rendered play, at its play index
+
+
+def test_skip_mode_fast_forward_would_diverge(monkeypatch):
+    """The mutant: Manim's own skip mode for the plays before the chunk. Its digests differ, so the tee comparison
+    in the build can catch it."""
+    monkeypatch.setattr(manim_hooks, "exact_fast_forward", lambda scene: None)
+    got, _, _, want = tee_run(stateful, 3)
+    assert got != want

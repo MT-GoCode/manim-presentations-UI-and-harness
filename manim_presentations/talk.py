@@ -28,7 +28,7 @@ from manim import (
 
 from manim_presentations import manim_hooks
 from manim_presentations.clip import RecordContext
-from manim_presentations.records import BeatKind, BeatRecord, Box, Unit
+from manim_presentations.records import Animation, BeatKind, BeatRecord, Box, Unit
 
 GLYPHS = (Text, MarkupText, SingleStringMathTex, DecimalNumber, Paragraph)  # every leaf under these is a glyph
 BACKGROUND = (NumberPlane, Axes)  # their lines never count for overlap
@@ -46,9 +46,7 @@ class _Beat:
     def __init__(self, slug: str, kind: BeatKind, line: int, first_anim: int):
         self.slug, self.line, self.first_anim = slug, line, first_anim
         self.kind: BeatKind = kind
-        self.run_times: list[float] = []
-        self.drawn: list[str] = []
-        self.frames: list[int] = []
+        self.animations: list[Animation] = []
         self.end: tuple[Unit, ...] = ()
 
     def record(self) -> BeatRecord:
@@ -57,9 +55,7 @@ class _Beat:
             kind=self.kind,
             line=self.line,
             first_anim=self.first_anim,
-            run_times=tuple(self.run_times),
-            drawn=tuple(self.drawn),
-            frames=tuple(self.frames),
+            animations=tuple(self.animations),
             end=self.end,
         )
 
@@ -117,10 +113,8 @@ class Talk(Scene):
             )
         super().play(*args, **kwargs)
         digest, frames = self.recorder.play_digest()
-        b = self.beats[-1]
-        b.run_times.append(self.duration)  # the play's exact run time (the clock accumulates float error)
-        b.drawn.append(digest)
-        b.frames.append(frames)
+        # self.duration: the play's exact run time (the scene clock accumulates float error)
+        self.beats[-1].animations.append(Animation(run_time=self.duration, digest=digest, frames=frames))
 
     def tear_down(self) -> None:
         if not self.beats:

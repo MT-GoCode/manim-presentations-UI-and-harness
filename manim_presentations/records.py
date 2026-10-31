@@ -31,14 +31,20 @@ class Unit(_Frozen):
     fills: tuple[Box, ...]  # fill-only shapes and images (off frame only)
 
 
+class Animation(_Frozen):
+    """One play: its exact run time, the digest of the frames it writes, and how many it writes."""
+
+    run_time: float
+    digest: str
+    frames: int
+
+
 class BeatRecord(_Frozen):
     slug: str
     kind: BeatKind
     line: int  # the talk.beat/talk.loop call's line in the chapter file
     first_anim: int  # the chapter scene's play index of this beat's first animation
-    run_times: tuple[float, ...]  # per animation
-    drawn: tuple[str, ...]  # per animation: the digest of the frames it writes
-    frames: tuple[int, ...]  # per animation: how many frames it writes
+    animations: tuple[Animation, ...]
     end: tuple[Unit, ...]
 
 

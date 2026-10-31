@@ -135,6 +135,7 @@ def test_tee_renders_the_same_pixels_as_plain_manim(talk, tmp_path):
     script.write_text(PLAIN)
     r = subprocess.run(
         [sys.executable, "-P", str(script), str(root), str(tmp_path / "plain")],
+        env={**os.environ, "PYTHONHASHSEED": "0"},
         capture_output=True,
         text=True,
         cwd=root,
@@ -279,17 +280,18 @@ def test_engine_edits_outside_clip_py_render_nothing_and_clip_py_renders_everyth
 
 
 def test_a_clip_whose_stream_does_not_match_the_declared_encoding_fails(talk, tmp_path):
+    """An engine edit that changes the encoder output (here, a worker merging a pixel format into the config after
+    render_config) yields clips whose stream no longer matches what clip.py declares."""
     root = talk("edge")
     pkg = tmp_path / "engine"
     shutil.copytree(
         REPO / "manim_presentations", pkg / "manim_presentations", ignore=shutil.ignore_patterns("__pycache__")
     )
     (pkg / ".tinytex").symlink_to(REPO / ".tinytex")
-    edit(pkg / "manim_presentations" / "clip.py", '"pixel_format": "yuv420p"', '"pixel_format": "yuv444p"')
     edit(
-        pkg / "manim_presentations" / "clip.py",
-        'want = {"codec": "h264", "pix_fmt": OUTPUT["pixel_format"]',
-        'want = {"codec": "h264", "pix_fmt": "yuv420p"',
+        pkg / "manim_presentations" / "worker.py",
+        "    config.update(merged)\n",
+        '    config.update(merged)\n    config.pixel_format = "yuv444p"\n    clip._applied["pixel_format"] = "yuv444p"\n',
     )
     r = build(root, env={**os.environ, "PYTHONPATH": str(pkg)})
     assert r.returncode == 1 and "stream check failed: pix_fmt yuv444p ≠ yuv420p" in r.stderr, r.stdout + r.stderr

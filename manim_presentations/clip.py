@@ -38,7 +38,7 @@ def render_config(settings: Settings) -> None:
     """Make the global Manim `config` exactly Manim's packaged defaults plus this talk's render settings, in place
     (modules hold references to it). A user ~/.config/manim/manim.cfg, merged in at `import manim`, never leaks."""
     parser = configparser.ConfigParser()
-    parser.read_file((Path(manim.__file__).parent / "_config" / "default.cfg").open())
+    parser.read(Path(manim.__file__).parent / "_config" / "default.cfg")
     fresh = ManimConfig().digest_parser(parser)
     fresh.update(render_keys(settings))
     config.update(fresh)

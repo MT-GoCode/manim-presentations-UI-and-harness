@@ -99,3 +99,40 @@ name = "deck and geometry are pure: no rendering library"
 type = "forbidden"
 source_modules = ["manim_presentations.deck", "manim_presentations.geometry"]
 forbidden_modules = ["manim", "av", "cairo", "PySide6"]
+
+[[tool.importlinter.contracts]]
+name = "dependencies point one way: entry points over the scene side over the leaves"
+type = "layers"
+layers = [
+    "manim_presentations.cli",
+    "manim_presentations.build",
+    "manim_presentations.worker",
+    "manim_presentations.pass1",
+    "manim_presentations.talk",
+    "manim_presentations.manim_hooks | manim_presentations.clip",
+    "manim_presentations.geometry | manim_presentations.deck | manim_presentations.schedule | manim_presentations.stills",
+    "manim_presentations.settings | manim_presentations.script | manim_presentations.headroom",
+    "manim_presentations.records | manim_presentations.protocol",
+]
+
+[[tool.importlinter.contracts]]
+name = "clip.py, the only fingerprinted file, imports no other engine code but settings"
+type = "forbidden"
+source_modules = ["manim_presentations.clip"]
+forbidden_modules = [
+    "manim_presentations.manim_hooks", "manim_presentations.talk", "manim_presentations.pass1",
+    "manim_presentations.worker", "manim_presentations.build", "manim_presentations.geometry",
+    "manim_presentations.deck", "manim_presentations.schedule", "manim_presentations.stills",
+    "manim_presentations.script", "manim_presentations.headroom", "manim_presentations.records",
+    "manim_presentations.protocol", "manim_presentations.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "manim_hooks imports no engine code"
+type = "forbidden"
+source_modules = ["manim_presentations.manim_hooks"]
+forbidden_modules = [
+    "manim_presentations.clip", "manim_presentations.talk", "manim_presentations.pass1", "manim_presentations.worker",
+    "manim_presentations.build", "manim_presentations.deck", "manim_presentations.geometry",
+    "manim_presentations.settings", "manim_presentations.records",
+]

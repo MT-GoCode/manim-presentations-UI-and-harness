@@ -48,9 +48,9 @@ def main(argv: list[str]) -> int:
     clip.check_render_config(settings)  # nothing outside clip.py changed what frames are drawn with
     partials = manim_hooks.partial_files(scene)
     report = [
-        {"anim": b.first_anim + j, "digest": b.drawn[j], "frames": b.frames[j], "partial": partials[b.first_anim + j]}
+        {"anim": b.first_anim + j, "digest": a.digest, "frames": a.frames, "partial": partials[b.first_anim + j]}
         for b in scene.beats
-        for j in range(len(b.drawn))
+        for j, a in enumerate(b.animations)
         if int(first) <= b.first_anim + j <= int(last)
     ]
     (out_path / "report.json").write_text(json.dumps(report))

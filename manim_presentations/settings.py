@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, PositiveFloat, PositiveInt, ValidationError, model_validator
 
 FRAME_HEIGHT_UNITS = 8.0  # Manim's frame height: the default frame_width is 8 · W / H
 SCALE_FACTOR_PER_FONT_POINT = 1 / 960  # manim/constants.py: scene units per font_size point
@@ -38,10 +38,10 @@ class _Table(BaseModel):
 
 
 class _Render(_Table):
-    pixel_width: int = 1920  # 16:9: the shape of browsers, projectors and screen shares
-    pixel_height: int = 1080
-    frame_width: float | None = None  # None: FRAME_HEIGHT_UNITS · W / H
-    frame_rate: int = 30  # Manim's default, and what Mixing Deluxe uses
+    pixel_width: PositiveInt = 1920  # 16:9: the shape of browsers, projectors and screen shares
+    pixel_height: PositiveInt = 1080
+    frame_width: PositiveFloat | None = None  # None: FRAME_HEIGHT_UNITS · W / H
+    frame_rate: PositiveInt = 30  # Manim's default, and what Mixing Deluxe uses
     background: str = "#000000"  # black chapter cards (D11) and a true-black stage
 
 
