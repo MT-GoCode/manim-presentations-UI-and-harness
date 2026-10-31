@@ -11,6 +11,7 @@ import sys
 if __name__ == "__main__":
     os.chdir(sys.argv[1])
 
+import _posixsubprocess
 import shutil
 import tempfile
 import threading
@@ -21,7 +22,8 @@ from typing import Any
 READ_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "glob.glob"})
 # A child process reads files no audit event shows, so a chapter may start only TinyTeX's own programs (Manim's
 # latex and dvisvgm calls).
-SPAWN_EVENTS = frozenset({"subprocess.Popen", "os.posix_spawn", "os.exec", "os.system", "os.spawn"})
+SPAWN_EVENTS = frozenset({"os.posix_spawn", "os.exec"})  # with the program they start
+NO_PROGRAM_EVENTS = frozenset({"os.fork", "os.forkpty", "os.system"})  # a shell or a copy of this process: refused
 SYSTEM_ROOTS = ("/System", "/usr", "/Library", "/opt/homebrew", "/dev/null")
 EXCLUSIVE_CREATE = os.O_CREAT | os.O_EXCL
 
@@ -30,6 +32,14 @@ def cannot_read(flags: int) -> bool:
     """An open that cannot return existing bytes: write-only, or an exclusive create (O_RDWR | O_CREAT | O_EXCL only
     ever makes a new, empty file; `tempfile` opens its files that way)."""
     return flags & os.O_ACCMODE == os.O_WRONLY or flags & EXCLUSIVE_CREATE == EXCLUSIVE_CREATE
+
+
+def tracker(args: Any) -> bool:
+    """multiprocessing's own resource tracker (Manim's progress bar makes a multiprocessing lock, which starts it): an
+    exact command that reads no talk file."""
+    tail = [os.fsencode(a) for a in args[-2:]]
+    command = b"from multiprocessing.resource_tracker import main;"
+    return len(tail) == 2 and tail[0] == b"-c" and tail[1].startswith(command)
 
 
 class ReadGuard:
@@ -44,7 +54,9 @@ class ReadGuard:
 
         self.cache = realpath(cache)
         self.snapshot = realpath(snapshot)
-        self.tinytex = realpath(tinytex)
+        # The TinyTeX the build puts on PATH (bin-path names its bin folder, two levels below the TinyTeX root): one
+        # source for where Manim's latex and dvisvgm are found and for which programs a chapter may start.
+        self.tex = realpath(Path((tinytex / "bin-path").read_text().strip()).parents[1])
         package = Path(manim_presentations.__file__).parent
         self.roots = tuple(
             realpath(p) for p in (snapshot, sys.prefix, sys.base_prefix, package, tinytex, cache, *SYSTEM_ROOTS)
@@ -69,9 +81,14 @@ class ReadGuard:
     def __call__(self, event: str, args: tuple[Any, ...]) -> None:
         if not self.active:
             return
-        if event in SPAWN_EVENTS:
-            self.spawned(event, args)
+        if event == "subprocess.Popen":  # (executable, args, cwd, env); args is the list run, a shell's included
+            self.started(args[0] or args[1][0])
             return
+        if event in SPAWN_EVENTS:
+            self.started(args[0])
+            return
+        if event in NO_PROGRAM_EVENTS:
+            self.refuse(event)
         if event not in READ_EVENTS:
             return
         path = args[0]
@@ -97,20 +114,28 @@ class ReadGuard:
             rel = os.path.relpath(p, self.snapshot)
             self.inputs.add(rel.rstrip("/") + "/" if listed else rel)
 
-    def spawned(self, event: str, args: tuple[Any, ...]) -> None:
+    def started(self, command: Any) -> None:
         """Refuse any child process but TinyTeX's programs: what a child reads is invisible to this guard."""
-        match event:
-            case "subprocess.Popen":
-                command = args[0] or (args[1] if isinstance(args[1], (str, bytes, os.PathLike)) else args[1][0])
-            case "os.system":
-                command = os.fsdecode(args[0]).split()[0]
-            case _:
-                command = args[0]
-        found = shutil.which(os.fsdecode(command)) or os.fsdecode(command)
-        program = self.own(found)
-        if not program.startswith(self.tinytex + os.sep):
-            self.violations.append(f"started {program}; a talk may not start other programs")
-            raise PermissionError(f"a talk may not start other programs; it started {program}")
+        program = self.own(shutil.which(os.fsdecode(command)) or os.fsdecode(command))
+        if not program.startswith(self.tex + os.sep):
+            self.refuse(program)
+
+    def refuse(self, what: str) -> None:
+        self.violations.append(f"started {what}; a talk may not start other programs")
+        raise PermissionError(f"a talk may not start other programs; it started {what}")
+
+    def fork_exec(self, real: Any) -> Any:
+        """_posixsubprocess.fork_exec checking its program: multiprocessing starts children through it with no audit
+        event (subprocess binds it at import and is checked by its own audit event). Its second argument is the list
+        of paths it will try for the program."""
+
+        def checked(args: Any, executables: Any, *rest: Any) -> Any:
+            if self.active and not tracker(args):
+                for program in executables:
+                    self.started(program)
+            return real(args, executables, *rest)
+
+        return checked
 
     def stat(self, real: Any) -> Any:
         """os.stat/os.lstat/os.access noting their path: CPython raises no audit event for these, yet
@@ -145,6 +170,7 @@ def main(argv: list[str]) -> int:
     guard = ReadGuard(snapshot_path, cache_path, Path(tinytex))
     sys.addaudithook(guard)
     os.stat, os.lstat, os.access = guard.stat(os.stat), guard.stat(os.lstat), guard.stat(os.access)
+    _posixsubprocess.fork_exec = guard.fork_exec(_posixsubprocess.fork_exec)
     clip.render_config(Settings.from_argv(settings_json))
     config.update(
         {

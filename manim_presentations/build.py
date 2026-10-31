@@ -238,8 +238,8 @@ def pass1_base(
 
 def pass1_key(base: list[str], snapshot: Path, inputs: tuple[str, ...]) -> str:
     """`base` and the current digest of each talk path the chapter depended on: a file's sha256 with its mode and
-    mtime (what a stat shows; the snapshot keeps both), a stat'ed folder's mode and mtime, a listed folder's ("dir/")
-    sorted entry names, or "absent" once gone."""
+    mtime (what a stat shows; the snapshot keeps both), "dir" for a stat'ed folder, a listed folder's ("dir/") sorted
+    entry names, or "absent" once gone."""
     h = hashlib.sha256(json.dumps(base).encode())
     for rel in inputs:
         p = snapshot / rel.rstrip("/")
@@ -248,7 +248,8 @@ def pass1_key(base: list[str], snapshot: Path, inputs: tuple[str, ...]) -> str:
         else:
             s = p.stat() if p.exists() else None
             shown = f"{s.st_mode} {s.st_mtime_ns}" if s else ""
-            digest = f"{sha256(p)} {shown}" if p.is_file() else f"dir {shown}" if p.is_dir() else "absent"
+            # A folder's mode and mtime are the snapshot's own (made anew each build): a folder keys on existing.
+            digest = f"{sha256(p)} {shown}" if p.is_file() else "dir" if p.is_dir() else "absent"
         h.update(f"{rel}\0{digest}\0".encode())
     return h.hexdigest()
 

@@ -178,3 +178,25 @@ def test_a_chapter_may_not_start_other_programs(prebuilt):
     branch_on('__import__("subprocess").run(["/bin/echo", "hi"]).returncode == 0')(root)
     r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
     assert r.returncode == 1 and "chapters/sizes.py started /bin/echo; a talk may not start other programs" in r.stderr
+
+
+def test_a_folder_check_does_not_rerun_an_unchanged_chapter(prebuilt):
+    """The snapshot makes its folders anew each build: a chapter that checks one is reused while nothing changed."""
+    root = prebuilt("edge")
+    assert ran(root, branch_on('(talk.root / "assets").is_dir() and False')) == {"sizes"}
+    assert ran(root, lambda r: None) == set()
+
+
+def test_a_chapter_may_not_run_a_shell(prebuilt):
+    root = prebuilt("edge")
+    branch_on('os.system("true") == 0')(root)
+    r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
+    assert r.returncode == 1 and "chapters/sizes.py started os.system; a talk may not start other programs" in r.stderr
+
+
+def test_a_chapter_may_not_start_a_process_through_multiprocessing(prebuilt):
+    """multiprocessing starts its children with no audit event; the guard checks them anyway."""
+    root = prebuilt("edge")
+    branch_on('__import__("multiprocessing").get_context("spawn").Process(target=print).start() and False')(root)
+    r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
+    assert r.returncode == 1 and "a talk may not start other programs" in r.stderr

@@ -212,3 +212,6 @@ If the engine misbehaves, stop and tell the user. Never patch the engine from in
 - **Large inputs** to a generator script stay outside the talk; only its small output goes into `assets/`, because
   every file in a talk is snapshotted and hashed on every build.
 - **Dependencies.** Talks use only the engine's Python dependencies.
+- **No other programs, and no TeX `\input` of talk files.** A chapter may not start programs (the build refuses it).
+  TeX reading a file through `\input` is not tracked, so an edit to that file would not rebuild the beat: put the
+  TeX in the Python string instead.
