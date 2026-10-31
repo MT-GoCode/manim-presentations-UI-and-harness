@@ -2,6 +2,9 @@ name: CI
 on:
   push:
   pull_request:
+concurrency:  # a newer push supersedes a running check of the same branch
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: macos-latest
