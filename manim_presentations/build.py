@@ -202,16 +202,48 @@ def engine_code() -> str:
     return h.hexdigest()
 
 
+def library_code(identity: dict[str, str]) -> str:
+    """The installed files of each library `identity` names, by the hashes uv recorded at install (RECORD): a
+    reinstall of a library at the same version changes it too. An edit made in place is not caught."""
+    from importlib.metadata import distribution
+
+    h = hashlib.sha256()
+    for d in ("manim", "pycairo", "av", "numpy", "pillow"):
+        h.update((distribution(d).read_text("RECORD") or "").encode())
+    return h.hexdigest()
+
+
+# What a chapter's scene processes see of the environment: these, and nothing else, so a chapter cannot depend on
+# a variable the key does not hold. PATH finds the TeX binaries; HOME and the locale reach fonts and text shaping.
+CHILD_ENV = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "PYTHONPATH")
+
+
+def pass1_base(
+    engine: str, identity: dict[str, str], libraries: str, cache_id: str, env: dict[str, str], settings: str, title: str
+) -> list[str]:
+    """Everything a chapter's pass 1 depends on besides the talk files it reads: the engine, the drawing libraries,
+    the TeX/text cache identity, the environment it runs in, the settings, and the chapter's own title."""
+    return [
+        engine,
+        json.dumps(identity, sort_keys=True),
+        libraries,
+        cache_id,
+        json.dumps(env, sort_keys=True),
+        settings,
+        title,
+    ]
+
+
 def pass1_key(base: list[str], snapshot: Path, inputs: tuple[str, ...]) -> str:
-    """What a chapter's pass 1 depends on: `base` (engine, cache-id, settings, titles) and the current digest of
-    each talk file it opened and each folder it listed ("dir/": its sorted entry names); "absent" once gone."""
+    """`base` and the current digest of each talk path the chapter depended on: a file's sha256 (or "dir" for a
+    stat'ed folder), a listed folder's ("dir/") sorted entry names, or "absent" once gone."""
     h = hashlib.sha256(json.dumps(base).encode())
     for rel in inputs:
         p = snapshot / rel.rstrip("/")
         if rel.endswith("/"):
             digest = json.dumps(sorted(os.listdir(p))) if p.is_dir() else "absent"
         else:
-            digest = sha256(p) if p.is_file() else "absent"
+            digest = sha256(p) if p.is_file() else "dir" if p.is_dir() else "absent"
         h.update(f"{rel}\0{digest}\0".encode())
     return h.hexdigest()
 
@@ -395,12 +427,13 @@ def build(talk: Path, workers: int | None) -> int:
     cid = cache_id()
     shared = layout.cache(cid)
     shared.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "PYTHONHASHSEED": "0"}
+    env = {**{k: os.environ[k] for k in CHILD_ENV if k in os.environ}, "PYTHONHASHSEED": "0"}
     tex_env = {**env, "PATH": (tinytex() / "bin-path").read_text().strip() + os.pathsep + os.environ["PATH"]}
-    engine = engine_code()
+    identity = clip.identity()
+    common = (engine_code(), identity, library_code(identity), cid, tex_env, settings.to_argv())
 
     def base(c: Chapter) -> list[str]:
-        return [engine, cid, settings.to_argv(), c.slug, c.title or c.slug, script.title]
+        return pass1_base(*common, c.title or c.slug)
 
     def reusable(c: Chapter) -> ChapterRecord | None:
         """The stored record, if the previous build committed it and nothing it read has changed since."""
@@ -447,7 +480,6 @@ def build(talk: Path, workers: int | None) -> int:
         fail_checks(findings)
 
     # Fingerprint and reuse: a beat whose fingerprint the previous build committed, with its clip on disk, is reused.
-    identity = clip.identity()
     prints = {(r.chapter, b.slug): fingerprint(identity, settings, b) for r in records for b in r.beats}
     reused = {key for key, fp in prints.items() if fp in old_beats and layout.clip(old_beats[fp].clip).exists()}
     to_render = {

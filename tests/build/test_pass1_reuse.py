@@ -64,15 +64,12 @@ def test_a_new_file_in_a_listed_folder_runs_the_chapters_that_listed_it(prebuilt
     }
 
 
-def test_settings_titles_and_the_engine_run_every_chapter(prebuilt, tmp_path):
+def test_the_settings_and_the_engine_run_every_chapter(prebuilt, tmp_path):
     root = prebuilt("edge")
     toml = root / "talk.toml"
     assert ran(root, lambda r: toml.write_text(toml.read_text().replace("480", "640").replace("270", "360"))) == set(
         CHAPTERS
     )
-    script = root / "script.md"
-    lines = script.read_text().split("\n")
-    assert ran(root, lambda r: script.write_text("\n".join([lines[0] + " (renamed)", *lines[1:]]))) == set(CHAPTERS)
     pkg = tmp_path / "engine" / "manim_presentations"
     shutil.copytree(REPO / "manim_presentations", pkg, ignore=shutil.ignore_patterns("__pycache__"))
     (pkg.parent / ".tinytex").symlink_to(REPO / ".tinytex")  # the engine finds its TeX beside its package
@@ -106,5 +103,49 @@ def test_an_incremental_build_equals_a_full_one(prebuilt, tmp_path):
             (b["chapter"], b["slug"], b["fingerprint"])
             for b in json.loads(Layout(talk).index_path.read_text())["beats"]
         ]
+
+    assert beats(root) == beats(cold)
+
+
+def test_a_chapter_title_runs_that_chapter_and_the_talk_title_none(prebuilt):
+    """Pass 1 gives a chapter its own title (talk.title); the talk's title reaches no chapter."""
+    root = prebuilt("edge")
+    script = root / "script.md"
+    assert ran(
+        root, lambda r: script.write_text(script.read_text().replace("# sizes: Sizes after", "# sizes: After"))
+    ) == {"sizes"}
+    lines = script.read_text().split("\n")
+    assert ran(root, lambda r: script.write_text("\n".join([lines[0] + " (renamed)", *lines[1:]]))) == set()
+
+
+GROWS = "talk.add(small)\n"
+
+
+def test_an_existence_check_is_an_input(prebuilt):
+    """A chapter that branches on a file existing re-runs when it appears, though it never opened it."""
+    root = prebuilt("edge")
+    branch = GROWS + '    if (talk.root / "assets" / "flag.txt").exists():\n        small.shift([1, 0, 0])\n'
+    assert ran(
+        root,
+        lambda r: (r / "chapters/sizes.py").write_text((r / "chapters/sizes.py").read_text().replace(GROWS, branch)),
+    ) == {"sizes"}
+    assert ran(root, lambda r: (r / "assets" / "flag.txt").write_text("on")) == {"sizes"}
+
+
+def test_no_environment_variable_reaches_a_chapter(prebuilt, tmp_path):
+    """A chapter reading a variable of the caller's environment gets nothing, so the environment cannot be a hidden
+    input: the build matches a cold one made without it."""
+    root = prebuilt("edge")
+    reads = "import os\n" + (root / "chapters/sizes.py").read_text().replace(
+        GROWS, GROWS + '    if os.environ.get("MPRES_TEST_PROBE"):\n        small.shift([1, 0, 0])\n'
+    )
+    (root / "chapters/sizes.py").write_text(reads)
+    cold = tmp_path / "cold" / root.name
+    shutil.copytree(root, cold, ignore=shutil.ignore_patterns("build"))
+    build(root, env={"MPRES_TEST_PROBE": "1"})
+    build(cold)
+
+    def beats(talk):
+        return [(b["slug"], b["fingerprint"]) for b in json.loads(Layout(talk).index_path.read_text())["beats"]]
 
     assert beats(root) == beats(cold)

@@ -91,7 +91,7 @@ def construct(talk):
   - `talk.transient(*mobjects)` marks things (cursors, highlights) that must be gone by the end of their beat.
   - `talk.root` is the talk folder: read assets as `talk.root / "assets" / "x.png"`. A talk never reads, lists or
     `stat`s anything outside its own folder; the build refuses it.
-  - `talk.title` is the talk's title from `script.md`.
+  - `talk.title` is this chapter's title from `script.md` (its slug if it has none).
 - `helpers/` is importable from chapters as `from helpers.<module> import ...`.
 
 **`talk.toml`** is optional. Every value has a default with a stated origin. If you override a key in a table, that

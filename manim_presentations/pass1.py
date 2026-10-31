@@ -58,9 +58,7 @@ class ReadGuard:
         if not isinstance(path, (str, bytes, os.PathLike)):  # a file descriptor or None: already opened, or cwd
             return
         p = realpath(os.fsdecode(path))
-        if p == self.snapshot or p.startswith(self.snapshot + os.sep):
-            rel = os.path.relpath(p, self.snapshot)
-            self.inputs.add(rel if event == "open" else rel.rstrip("/") + "/")
+        self.note(p, listed=event != "open")
         if event == "open":
             if p.startswith(self.cache + os.sep):
                 self.cache_entries.add(os.path.basename(p))
@@ -70,6 +68,23 @@ class ReadGuard:
         if not (event == "open" and p == self.tempdir) and not any(p == r or p.startswith(r + os.sep) for r in roots):
             self.violations.append(p)
             raise PermissionError(f"a talk reads only files inside its own folder; {p} is outside it")
+
+    def note(self, p: str, listed: bool) -> None:
+        """A talk path the chapter depends on: a file it opened or stat'ed, or a folder it listed ("dir/")."""
+        if p == self.snapshot or p.startswith(self.snapshot + os.sep):
+            rel = os.path.relpath(p, self.snapshot)
+            self.inputs.add(rel.rstrip("/") + "/" if listed else rel)
+
+    def stat(self, real: Any) -> Any:
+        """os.stat/os.lstat noting their path: CPython raises no audit event for a stat, yet `Path.exists()` and
+        `.stat()` decide what a chapter draws as surely as a read does."""
+
+        def noted(path: Any, *args: Any, **kwargs: Any) -> Any:
+            if self.active and isinstance(path, (str, bytes, os.PathLike)):
+                self.note(realpath(os.fsdecode(path)), listed=False)
+            return real(path, *args, **kwargs)
+
+        return noted
 
 
 def main(argv: list[str]) -> int:
@@ -92,6 +107,7 @@ def main(argv: list[str]) -> int:
     where = chapter.relative_to(snapshot_path)
     guard = ReadGuard(snapshot_path, cache_path, Path(tinytex))
     sys.addaudithook(guard)
+    os.stat, os.lstat = guard.stat(os.stat), guard.stat(os.lstat)
     clip.render_config(Settings.from_argv(settings_json))
     config.update(
         {
