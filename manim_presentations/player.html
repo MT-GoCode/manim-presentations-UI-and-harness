@@ -13,7 +13,7 @@
   #transcript h3 { font-size: 15px; margin: 0 0 4px; color: #fff; }
   #transcript p { margin: 0 0 4px; white-space: pre-wrap; }
   #transcript p.note { color: #c9a227; font-style: italic; }
-  @media (min-aspect-ratio: 1/1) { #main { flex-direction: row; } #transcript { width: 32%; height: auto; border-top: 0; border-left: 1px solid #222; } }  /* last: it overrides the portrait sizes above */
+  @media (min-aspect-ratio: 1/1) { #main { flex-direction: row; } #transcript { width: 32%; height: auto; border-top: 0; border-left: 1px solid #222; } }  /* after the #transcript rules: it overrides their portrait sizes */
   #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   #bar { display: flex; gap: 8px; align-items: center; padding: 8px; background: #111; }
   #bar button { font: inherit; padding: 6px 14px; border: 1px solid #444; border-radius: 6px; background: #222; color: #eee; }
