@@ -1,5 +1,6 @@
 """Pass 1 and the checks, through real `mpres build` subprocesses on fixture copies."""
 
+import contextlib
 import fcntl
 import os
 import re
@@ -21,7 +22,7 @@ def test_edge_and_hello_build_clean(talk):
     for name in ("edge", "hello"):
         r = build(talk(name))
         assert r.returncode == 0, r.stdout + r.stderr
-        assert "checks passed" in r.stdout
+        assert r.stdout.splitlines()[-1].startswith("built ")
 
 
 @pytest.mark.parametrize(
@@ -150,9 +151,13 @@ WATCH_BOUND = 5  # s: the children's 1 s parent-death poll, plus exit and margin
 
 def test_the_first_failure_kills_the_other_children(talk):
     root = talk("edge", "slow-and-early")
-    r = build(root, TEST_WORKERS_WIDE)
+    r = mpres("build", str(root), "--workers", str(TEST_WORKERS_WIDE))
     assert r.returncode == 1 and "play or wait before the chapter's first talk.beat" in r.stderr, r.stderr
-    alive = [p for p in psutil.process_iter(["cmdline"]) if str(root) in " ".join(p.info["cmdline"] or [])]
+    alive = []
+    for p in psutil.process_iter():
+        with contextlib.suppress(psutil.Error):  # processes we may not inspect, or that ended mid-scan
+            if any(str(root) in arg for arg in p.cmdline()):
+                alive.append(p)
     assert alive == [], alive
 
 

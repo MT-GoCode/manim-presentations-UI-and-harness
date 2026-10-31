@@ -94,7 +94,9 @@ def tree_digest(root: Path) -> str:
 @pytest.fixture(scope="session")
 def warm_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """One warm TeX/text cache per session (xdist's documented recipe: one writer under a lock, the others read)."""
-    shared = tmp_path_factory.getbasetemp().parent
+    # One per session: under xdist every worker's basetemp sits in the session's directory; without it, basetemp is.
+    base = tmp_path_factory.getbasetemp()
+    shared = base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base
     done = shared / "warm-cache"
     with (shared / "warm-cache.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
