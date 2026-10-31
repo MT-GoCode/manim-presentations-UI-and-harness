@@ -7,7 +7,9 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
+from pathlib import Path
 
 import pytest
 from conftest import REPO, mpres
@@ -301,10 +303,13 @@ def test_a_crashed_audience_is_relaunched_on_the_same_beat(talk, open_, qtbot, l
     qtbot.waitUntil(now_is(window, p.At(slug="keeps-going"), "looping"), timeout=WAIT_MS)
     first = window.link.pid
     assert first is not None
-    window.now = None
     os.kill(first, signal.SIGKILL)
+    qtbot.waitUntil(lambda: "re-share" in window.status.text(), timeout=WAIT_MS)
+    assert window.now is None  # forgotten at the drop, ~1 s before the new Audience can say anything
     qtbot.waitUntil(now_is(window, p.At(slug="keeps-going"), "looping"), timeout=LAUNCH_MS)
     assert launches == [1, 1] and window.link.pid != first
+    with pytest.raises(ChildProcessError):
+        os.waitpid(first, os.WNOHANG)  # reaped before the relaunch
     assert "re-share the Audience View window" in window.status.text() and red(window)
     QTest.mouseClick(window.status, Qt.MouseButton.LeftButton)  # the presenter says it re-shared
     assert not red(window)
@@ -323,8 +328,12 @@ def test_closing_the_presenter_quits_the_audience(talk, open_, qtbot):
     window = open_(talk)
     qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
     pid = window.link.pid
+    assert pid is not None
     window.close()
-    assert os.waitpid(pid, 0)[0] == pid
+    deadline = time.monotonic() + LAUNCH_MS / 1000
+    while os.waitpid(pid, os.WNOHANG)[0] != pid:  # a hang would hide an Audience that stays up
+        assert time.monotonic() < deadline, "the Audience did not quit"
+        time.sleep(0.05)
     window.link.pid = None
     probe = QLocalSocket()
     probe.connectToServer(presenter.socket_path(talk))
@@ -423,3 +432,73 @@ def test_a_deleted_script_turns_red(talk, open_, qtbot):
     (talk / "script.md").unlink()
     qtbot.waitUntil(lambda: "script.md is missing" in window.status.text(), timeout=WAIT_MS)
     assert red(window)
+
+
+def test_closing_before_the_audience_listens_leaves_no_audience(talk, open_, qtbot):
+    window = open_(talk)
+    pid = window.link.pid
+    assert pid is not None and window.link.socket.state() != QLocalSocket.LocalSocketState.ConnectedState
+    window.close()  # within its ~1 s start: Quit cannot reach it yet
+    assert window.link.pid is None
+    with pytest.raises(ChildProcessError):
+        os.waitpid(pid, os.WNOHANG)  # terminated and reaped, not left listening
+
+
+def test_an_older_audience_is_quit_and_relaunched(talk, open_, qtbot, launches, tmp_path):
+    """A real Audience whose code differs (one comment), as after a `git pull`: it answers Quit with Closed, and the
+    Presenter still relaunches it, because its own Quit is the cause."""
+    pkg = tmp_path / "engine" / "manim_presentations"
+    shutil.copytree(REPO / "manim_presentations", pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    (pkg / "audience.py").write_text((pkg / "audience.py").read_text() + "\n# another version\n")
+    env = {**os.environ, "PYTHONPATH": str(pkg.parent), "QT_QPA_PLATFORM": "offscreen"}
+    name = presenter.socket_path(talk)
+    older = subprocess.Popen([sys.executable, "-P", "-m", "manim_presentations.audience", name, "T"], env=env)
+    try:
+        probe = QLocalSocket()
+        qtbot.waitUntil(lambda: (probe.connectToServer(name), probe.waitForConnected(50))[1], timeout=LAUNCH_MS)
+        probe.abort()
+        window = open_(talk)
+        qtbot.waitUntil(lambda: older.poll() == 0, timeout=LAUNCH_MS)  # it quit (the Qt loop keeps running)
+        qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
+        assert launches == [1] and "re-share" in window.status.text()
+    finally:
+        older.kill()
+
+
+def test_a_failed_clip_is_red_until_the_audience_shows_one(talk, open_, qtbot):
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello()
+    cover = fake.next()
+    fake.say(p.Failed(position=p.Before(), clip=cover.clip, reason="decoder said no"))
+    qtbot.waitUntil(lambda: "could not play" in window.status.text(), timeout=WAIT_MS)
+    assert red(window) and Path(cover.clip).name in window.status.text() and "decoder said no" in window.status.text()
+    fake.say(p.NowCovered(position=p.Before(), clip=cover.clip))
+    qtbot.waitUntil(lambda: not red(window), timeout=WAIT_MS)
+
+
+def test_a_report_about_another_clip_is_not_shown(talk, open_, qtbot):
+    """The same position with an older clip (a report from before a hot-swap) does not describe the screen."""
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello()
+    fake.next()
+    fake.say(p.NowCovered(position=p.Before(), clip="/an/older/clip.mp4"))
+    qtbot.wait(QUIET_MS)
+    assert window.now is None and "Audience: waiting" in window.status.text()
+
+
+def test_a_word_wider_than_the_editor_shrinks_the_text(talk, open_, qtbot):
+    window = open_(talk)
+    window.resize(1728, 1117)  # the editor column fits this word above the floor
+    window.go(p.At(slug="the-idea"), "show")
+    window.editor.setPlainText("Antidisestablishmentarianism")
+    window.fit()
+    assert window.editor.document().idealWidth() <= window.editor.viewport().width()
+
+
+def test_a_presenter_lock_held_briefly_is_waited_for(talk, open_):
+    """GC's liveness probe holds the lock for microseconds; present waits for it instead of exiting 3."""
+    fd = Layout(talk).presenter_lock()
+    threading.Timer(0.2, os.close, [fd]).start()
+    open_(talk)

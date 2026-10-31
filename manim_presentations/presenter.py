@@ -5,15 +5,16 @@ failure stays down, a closed window waits for a click, a crash is relaunched."""
 import json
 import os
 import signal
-import socket
 import sys
 import threading
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from hashlib import sha256
 from pathlib import Path
+from types import TracebackType
 from typing import Literal
 
 from PySide6.QtCore import (
@@ -22,7 +23,6 @@ from PySide6.QtCore import (
     QObject,
     QSignalBlocker,
     QSize,
-    QSocketNotifier,
     Qt,
     QTimer,
     Signal,
@@ -128,9 +128,10 @@ class Link(QObject):
         title: str,
         received: Callable[[p.NowCovered | p.NowAt | p.Hello | p.Failed | p.Key], None],
         trouble: Callable[[str | None], None],
+        lost: Callable[[], None],
     ):
         super().__init__()
-        self.root, self.title, self.received, self.trouble = root, title, received, trouble
+        self.root, self.title, self.received, self.trouble, self.lost = root, title, received, trouble, lost
         self.name = socket_path(root)
         self.pid: int | None = None  # the Audience this Presenter launched and has not reaped; None for an adopted one
         self.told: Told = "nothing"
@@ -182,9 +183,16 @@ class Link(QObject):
             self.socket.write(p.encode(message))
             self.socket.waitForBytesWritten()
 
-    def quit(self) -> None:
+    def close(self) -> None:
+        """Intent: the Audience goes too. Quit if it is connected; a launched one not yet listening is terminated."""
         self.told = "quit"
-        self.send(p.Quit())
+        self.retry.stop()
+        if self.socket.state() == QLocalSocket.LocalSocketState.ConnectedState:
+            self.send(p.Quit())
+        elif self.pid is not None:
+            os.kill(self.pid, signal.SIGTERM)
+            os.waitpid(self.pid, 0)
+            self.pid = None
 
     def click(self) -> None:
         if self.on_click is not None:
@@ -195,6 +203,8 @@ class Link(QObject):
         self.buffer += bytes(self.socket.readAll().data())
         *lines, self.buffer = self.buffer.split(b"\n")
         for line in lines:
+            if self.told in ("quit", "replace"):
+                return  # after our own Quit nothing this connection says changes why it ends (Quit sends Closed)
             raw = json.loads(line)
             if raw["type"] == "hello" and raw["protocol"] != p.AUDIENCE_CODE:
                 # Decoded by that one field: an Audience of other code may not speak this union at all.
@@ -215,6 +225,7 @@ class Link(QObject):
 
     def _dropped(self) -> None:
         self.retry.stop()
+        self.lost()
         match self.told:
             case "quit":
                 pass
@@ -304,7 +315,7 @@ class Presenter(QMainWindow):
         self.last_sent: Shown | None = None  # what the Audience was last told to show, or adopted as showing
         self.opening = False  # a Deck.open of a new build is running off the GUI thread
         self.lock_fd = -1  # the presenter lock, set by open_presenter
-        self.link = Link(self.root, self.title_text, self.received, self.audience_trouble)
+        self.link = Link(self.root, self.title_text, self.received, self.audience_trouble, self.audience_lost)
         self.opened.connect(self.hot_swap)
         self.open_failed.connect(lambda e: self.set_red("rebuild", f"the new build could not be read: {e}"))
         self._build_ui()
@@ -430,10 +441,14 @@ class Presenter(QMainWindow):
             self.go(p.At(slug=slug), "show")
 
     def go(self, position: p.Before | p.At, how: How) -> None:
-        self.position, self.now = position, None  # until the Audience reports this position
-        self.last_sent = show_for(position, self.beat_at(position), how)
-        self.link.send(self.last_sent)
+        self.position = position
+        self.tell(show_for(position, self.beat_at(position), how))
         self.show_position()
+
+    def tell(self, message: Shown) -> None:
+        """The one place the Audience is told what to show; what it reported before no longer describes the screen."""
+        self.last_sent, self.now = message, None
+        self.link.send(message)
 
     def flash(self, action: p.Action, color: str | None) -> None:
         button = self.buttons[action]
@@ -470,7 +485,8 @@ class Presenter(QMainWindow):
                 self.adopt(last)
                 print(f"present: Audience connected, showing {self.position}", flush=True)  # for an agent's log
             case p.NowCovered() | p.NowAt():
-                if message.position == self.position:
+                sent = self.last_sent
+                if sent is not None and (message.position, message.clip) == (sent.position, sent.clip):
                     self.now = message
                     self.red.pop("failed", None)
                     self.refresh_status()
@@ -543,14 +559,17 @@ class Presenter(QMainWindow):
         self.fill_timeline()
         settled = show_for(self.position, self.beat_at(self.position), "show")
         if self.last_sent is None or held(settled) != held(self.last_sent):
-            self.last_sent = settled
-            self.link.send(settled)
+            self.tell(settled)
         self.show_position()
         self.build_changed("")  # a build committed while this one was opening
 
     def set_red(self, source: str, text: str) -> None:
         self.opening = False
         self.red[source] = text
+        self.refresh_status()
+
+    def audience_lost(self) -> None:
+        self.now = None  # the Audience that reported it is gone
         self.refresh_status()
 
     def audience_trouble(self, text: str | None) -> None:
@@ -680,7 +699,7 @@ class Presenter(QMainWindow):
         return True  # consumed at its first (QWindow) delivery, so the QWidget delivery never happens
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        self.link.quit()
+        self.link.close()
         if self.lock_fd >= 0:  # a second close must not close whatever fd reuses the number
             os.close(self.lock_fd)  # pins count only while this lock is held
             self.lock_fd = -1
@@ -725,29 +744,45 @@ def lock(layout: d.Layout) -> int:
             time.sleep(0.01)
 
 
-def route_signals(window: Presenter) -> list[object]:
-    """Closing by cause. Intent (SIGINT, SIGTERM) closes both windows; accident (SIGHUP, a dead parent) exits
-    without Quit, so the Audience and the Zoom share stay up and a re-run reconnects. Returns what must stay alive."""
-    wake, woken = socket.socketpair()
-    for end in (wake, woken):
-        end.setblocking(False)
-    signal.set_wakeup_fd(woken.fileno())  # the C handler wakes the Qt loop, so the Python handler runs at once
-    notifier = QSocketNotifier(wake.fileno(), QSocketNotifier.Type.Read)
-    notifier.activated.connect(lambda: wake.recv(64))
-    for intent in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(intent, lambda *_: window.close())
-    signal.signal(signal.SIGHUP, lambda *_: os._exit(128 + signal.SIGHUP))  # closes the lock fds and the socket
+def route_signals(intent: Callable[[], None]) -> list[object]:
+    """Closing by cause. Intent (SIGINT, SIGTERM) runs `intent`. Accident is left to the defaults: SIGHUP terminates
+    (or is ignored under nohup), and a dead parent exits; both close the lock and socket without Quit, so the Audience
+    and the Zoom share stay up and a re-run reconnects. A Python handler runs when Python next runs; the parent watch
+    below wakes it at least every PARENT_WATCH_MS. Returns what must stay alive."""
+    for number in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(number, lambda *_: intent())
     parent = os.getppid()  # uv, under bin/mpres: its SIGKILL cannot be forwarded (macOS has no PR_SET_PDEATHSIG)
     watch = QTimer()
     watch.timeout.connect(lambda: os.getppid() != parent and os._exit(1))
     watch.start(PARENT_WATCH_MS)
-    return [wake, woken, notifier, watch]
+    return [watch]
 
 
 def present(root: Path, start: str | None) -> int:
     app = QApplication([])
-    window = open_presenter(root, start)
-    kept = route_signals(window)
+    windows: list[Presenter] = []
+    early: list[bool] = []  # an intent signal during startup, acted on once the window (and its Link) exists
+
+    def intent() -> None:
+        if windows:
+            windows[0].close()
+        else:
+            early.append(True)
+
+    kept = route_signals(intent)
+
+    def failed(kind: type[BaseException], error: BaseException, trace: TracebackType | None) -> None:
+        """Qt prints a slot's exception and carries on: show it red rather than lose the Presenter mid-talk."""
+        traceback.print_exception(kind, error, trace)
+        if windows:
+            windows[0].red["error"] = f"{kind.__name__}: {error}"
+            windows[0].refresh_status()
+
+    sys.excepthook = failed
+    windows.append(open_presenter(root, start))
+    if early:
+        windows[0].close()
+        return 0
     code = app.exec()
     del kept
     return code

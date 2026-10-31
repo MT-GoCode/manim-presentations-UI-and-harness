@@ -69,8 +69,7 @@ def open_(qtbot, qapp):
     yield make
     for window in windows:
         qapp.removeEventFilter(window)
-        window.link.retry.stop()
-        window.link.quit()
+        window.link.close()
         if window.link.pid is not None:
             os.kill(window.link.pid, signal.SIGKILL)
             os.waitpid(window.link.pid, 0)
@@ -117,7 +116,12 @@ class FakeAudience:
         assert self.client is not None
         self.buffer += bytes(self.client.readAll().data())
         *lines, self.buffer = self.buffer.split(b"\n")
-        self.got += [p.to_audience(line) for line in lines]
+        for line in lines:
+            message = p.to_audience(line)
+            self.got.append(message)
+            if isinstance(message, p.Quit):  # as the real Audience does: Quit closes its window, which says Closed
+                self.client.write(p.encode(p.Closed()))
+                self.client.flush()
 
     def say(self, message_or_bytes):
         self.qtbot.waitUntil(lambda: self.client is not None, timeout=WAIT_MS)

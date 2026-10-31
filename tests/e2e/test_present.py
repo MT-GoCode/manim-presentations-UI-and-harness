@@ -5,11 +5,23 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
 import time
 
 import pytest
 from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, mpres
-from presenting import BEATS, LAUNCH_MS, QUIET_MS, WAIT_MS, build_once, copy_built, now_is, open_, press
+from presenting import (
+    BEATS,
+    LAUNCH_MS,
+    QUIET_MS,
+    WAIT_MS,
+    FakeAudience,
+    build_once,
+    copy_built,
+    now_is,
+    open_,
+    press,
+)
 from PySide6.QtCore import Qt
 
 from manim_presentations import presenter
@@ -103,8 +115,8 @@ def commit_from(root, other):
 def rebuilt(talk, tmp_path):
     """Factory: a copy of `talk`, edited by `change`, built."""
 
-    def make(change):
-        other = tmp_path / "other" / talk.name
+    def make(change, name="other"):
+        other = tmp_path / name / talk.name
         shutil.copytree(talk, other, ignore=shutil.ignore_patterns(".presenter*", ".media"))
         change(other)
         build(other)
@@ -143,7 +155,7 @@ def test_a_rebuild_that_changes_the_current_beat_shows_its_new_held_state(talk, 
     old = window.now.clip
     commit_from(talk, other)
     settled(qtbot, window, talk)
-    qtbot.waitUntil(lambda: window.now.clip != old, timeout=WAIT_MS)
+    qtbot.waitUntil(lambda: window.now is not None and window.now.clip != old, timeout=WAIT_MS)
     assert window.now == p.NowAt(
         position=p.At(slug="build-up"), clip=window.clip_of(p.At(slug="build-up")), state="held", pts=window.now.pts
     )
@@ -166,6 +178,39 @@ def test_a_rebuild_without_the_current_beat_moves_back_and_says_so(talk, open_, 
     settled(qtbot, window, talk)
     assert window.position == p.At(slug="title-card")
     assert "beat the-idea was removed by the rebuild; now at title-card" in window.status.text()
+    qtbot.waitUntil(now_is(window, p.At(slug="title-card"), "held"), timeout=WAIT_MS)  # and the Audience shows it
+
+
+def test_a_build_committed_while_the_last_one_opens_is_adopted(talk, open_, qtbot, rebuilt, monkeypatch):
+    """The folder event for build C arrives while B's deck is still opening, and is dropped then; the Presenter
+    looks again once B is adopted. A scripted Audience: a real one logs into build/, and that event would make the
+    Presenter look again by luck."""
+    b = rebuilt(lambda r: edit(r / "chapters" / "working.py", "Circle(1.0", "Circle(1.1"), "b")
+    c = rebuilt(lambda r: edit(r / "chapters" / "working.py", "Circle(1.0", "Circle(1.2"), "c")
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello()
+    fake.next()
+    release = threading.Event()
+    opening = []
+    open_deck = presenter.open_deck
+
+    def slow(root):
+        deck = open_deck(root)  # B, read now; C commits while this opening is held
+        opening.append(1)
+        release.wait()
+        return deck
+
+    monkeypatch.setattr(presenter, "open_deck", slow)
+    # Opening a deck rewrites the pins in build/, and that event would trigger a look by luck: take it away.
+    monkeypatch.setattr(Layout, "write_pins", lambda self, shas: None)
+    commit_from(talk, b)
+    qtbot.waitUntil(lambda: opening == [1], timeout=WAIT_MS)
+    commit_from(talk, c)
+    qtbot.wait(QUIET_MS)  # C's folder event lands while B is opening
+    release.set()
+    settled(qtbot, window, talk)
+    assert window.deck.build_id == Layout(c).build_id()
 
 
 def test_a_chapter_edited_mid_build_is_adopted_as_stale(talk, open_, qtbot):
@@ -197,7 +242,8 @@ def test_the_clip_on_screen_survives_two_builds(talk, open_, qtbot):
         build(talk)
     assert os.path.exists(shown)
     settled(qtbot, window, talk)
-    qtbot.waitUntil(lambda: window.now.clip == window.clip_of(p.At(slug="build-up")), timeout=WAIT_MS)
+    qtbot.waitUntil(now_is(window, p.At(slug="build-up"), "held"), timeout=WAIT_MS)
+    assert window.now.clip == window.clip_of(p.At(slug="build-up"))
 
 
 def test_a_reconnect_adopts_a_stale_deck_in_amber(talk, open_, qtbot):
@@ -206,9 +252,11 @@ def test_a_reconnect_adopts_a_stale_deck_in_amber(talk, open_, qtbot):
     qtbot.waitUntil(now_is(first, p.Before()), timeout=LAUNCH_MS)
     first.go(p.At(slug="build-up"), "show")
     qtbot.waitUntil(now_is(first, p.At(slug="build-up"), "held"), timeout=WAIT_MS)
-    first.link.told = "quit"  # this Presenter dies without a word: no Quit reaches the Audience
+    # This Presenter dies as a killed process does: its socket and lock close, nothing is said, nothing is killed.
+    first.link.told, first.link.pid = "quit", None
     first.link.socket.abort()
-    first.close()  # and its lock goes with it
+    os.close(first.lock_fd)
+    first.lock_fd = -1
     edit(talk / "chapters" / "opening.py", "One idea per beat", "One idea per minute")
     second = open_(talk)
     qtbot.waitUntil(lambda: second.position == p.At(slug="build-up"), timeout=WAIT_MS)
