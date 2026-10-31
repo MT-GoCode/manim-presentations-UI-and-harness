@@ -13,9 +13,9 @@ Manim touches here (each tested one to one in tests/unit/test_hooks.py):
   `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws the scene's mobjects and
   foreground on a fresh, unpatched `Camera` in one `capture_mobjects` call;
 - the size references: `Paragraph.__init__` (its Text lives off the scene family, in `lines_text`), and the
-  observation-only shadow on `Transform.clean_up_from_scene` (FadeTransform overrides it and restores its source)
-  and `Mobject.become`: the text classes' own `initial_height`, `font_size`, `height` and `submobjects` are read,
-  never written."""
+  observation-only shadow on `Transform.clean_up_from_scene` (FadeTransform overrides it and restores its source;
+  TransformFromCopy gets the unshadowed one) and `Mobject.become`: the text classes' own `initial_height`,
+  `font_size`, `height` and `submobjects` are read, never written."""
 
 import sys
 from pathlib import Path
@@ -203,8 +203,12 @@ def install_size_references() -> None:
     target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction, ReplacementTransform), and
     after become, give each node of the source the reference of the target node whose points it took: Manim's own
     pairing, by index over the two aligned families. A size-checked node paired with one that is not (a Text that now
-    draws a square, a Square that now draws glyphs) is marked for the check to report."""
-    from manim import Paragraph, Transform
+    draws a square, a Square that now draws glyphs) is marked for the check to report. TransformFromCopy ends at
+    interpolate(0), drawing its own points, so its mobject keeps its own references (alignment pads with copies of its
+    own nodes)."""
+    from inspect import signature
+
+    from manim import Paragraph, Transform, TransformFromCopy
 
     paragraph_init = Paragraph.__init__
 
@@ -236,12 +240,14 @@ def install_size_references() -> None:
             align_structure(x, y)
 
     become = Mobject.become
+    keywords = signature(become)
 
     def shadowing_become(self: Mobject, mobject: Mobject, *a: Any, **k: Any) -> Mobject:
-        # With no keyword, become aligns `mobject` itself, so it already pairs with self. With one, become aligns a
-        # private copy: align our own copy the same way (keywords only move points, never the family structure).
-        # The copy costs ~35× a bare become (6 ms for a line of Text), so it is made only when needed.
-        target = mobject.copy() if a or k else mobject
+        # With no true keyword, become aligns `mobject` itself, so it already pairs with self. With one, become aligns
+        # a private copy: align our own copy the same way (keywords only move points, never the family structure).
+        # The copy costs ~35× a bare become (6 ms for a line of Text), so it is made only when Manim makes one.
+        copies = any(list(keywords.bind(self, mobject, *a, **k).arguments.values())[2:])
+        target = mobject.copy() if copies else mobject
         out = become(self, mobject, *a, **k)
         align_structure(self, target)
         take(self, target)
@@ -249,4 +255,5 @@ def install_size_references() -> None:
 
     setattr(Paragraph, "__init__", recording_paragraph)
     setattr(Transform, "clean_up_from_scene", shadowing_clean_up)
+    setattr(TransformFromCopy, "clean_up_from_scene", clean_up)
     setattr(Mobject, "become", shadowing_become)

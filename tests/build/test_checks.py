@@ -119,8 +119,15 @@ def test_failure_counts_per_kind(talk, overlay, counts):
     assert r.stderr.splitlines()[-1] == f"checks failed: {counts}"
 
 
-def test_a_later_matching_transform_clears_a_size_mismatch(talk):
-    r = build(talk("edge", "remorph"))
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        "remorph",  # a later matching Transform clears a size mismatch
+        "fromcopy",  # TransformFromCopy of an equation part into a new equation
+    ],
+)
+def test_legal_transforms_pass_the_size_check(talk, overlay):
+    r = build(talk("edge", overlay))
     assert r.returncode == 0, r.stdout + r.stderr
 
 
