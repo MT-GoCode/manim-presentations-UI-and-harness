@@ -4,6 +4,7 @@ lives here and nowhere else.
 
 Manim touches here (each tested one to one in tests/unit/test_hooks.py):
 - the Recorder: the camera's drawing calls, `renderer.get_frame`, `file_writer.write_frame`;
+- the tee's static-frame map: `renderer.save_static_frame_data` (the one frame that becomes `static_image`);
 - `render_config`: the global `config`, rebuilt from Manim's packaged default.cfg only.
 
 In pass 1 the camera runs its own drawing code, but every call it would make to Cairo (paths, colours, gradients,
@@ -30,6 +31,7 @@ from manim_presentations.settings import Settings
 ENCODE = {"threads": "1", "g": "6", "crf": "18", "preset": "veryfast"}
 OUTPUT = {"format": "mp4", "transparent": False, "video_codec": "libx264", "pixel_format": "yuv420p"}
 SEED = 0  # every process draws the same random numbers, so chunks and pass 1 agree
+_applied: dict[str, Any] = {}  # what render_config last set, as Manim stores it
 
 
 def render_config(settings: Settings) -> None:
@@ -38,11 +40,13 @@ def render_config(settings: Settings) -> None:
     parser = configparser.ConfigParser()
     parser.read_file((Path(manim.__file__).parent / "_config" / "default.cfg").open())
     fresh = ManimConfig().digest_parser(parser)
-    fresh.update(_render_keys(settings))
+    fresh.update(render_keys(settings))
     config.update(fresh)
+    _applied.clear()
+    _applied.update({k: config[k] for k in render_keys(settings)})
 
 
-def _render_keys(settings: Settings) -> dict[str, Any]:
+def render_keys(settings: Settings) -> dict[str, Any]:
     return {
         "pixel_width": settings.pixel_width,
         "pixel_height": settings.pixel_height,
@@ -59,6 +63,14 @@ def _render_keys(settings: Settings) -> dict[str, Any]:
         "video_encoder_options": ENCODE,
         **OUTPUT,
     }
+
+
+def check_render_config(settings: Settings) -> None:
+    """The live config still holds exactly what `render_config` set: no code outside this file changed how frames are
+    drawn or encoded while the scene ran. Compared as Manim stores the values (colours and enums converted)."""
+    keys = render_keys(settings)
+    drift = {k: (config[k], _applied[k]) for k in keys if repr(config[k]) != repr(_applied[k])}
+    assert not drift, f"render config changed outside clip.py: {drift}"
 
 
 def _sha(*parts: bytes) -> bytes:
@@ -131,7 +143,17 @@ class RecordContext:
         self._canvas = b""
         self._written: list[tuple[bytes, int]] = []
         self._arrays: dict[int, tuple[np.ndarray, bytes]] = {}
-        self._background_colored = cam.display_multiple_background_colored_vmobjects
+        names = (
+            "get_cairo_context",
+            "display_point_cloud",
+            "display_image_mobject",
+            "display_multiple_background_colored_vmobjects",
+            "reset",
+            "set_frame_to_background",
+        )
+        self._orig: dict[str, Any] = {n: getattr(cam, n) for n in names}
+        self._orig_get_frame = scene.renderer.get_frame
+        self._orig_write = scene.renderer.file_writer.write_frame
         cam.get_cairo_context = self._context
         cam.display_point_cloud = self._points
         cam.display_image_mobject = self._image
@@ -168,7 +190,7 @@ class RecordContext:
             ("background-image", self._array(displayer.get_background_array(v.get_background_image())))
             for v in vmobjects
         ]
-        return self._background_colored(vmobjects, pixel_array)
+        return self._orig["display_multiple_background_colored_vmobjects"](vmobjects, pixel_array)
 
     def _points(self, pmobject: Any, points: np.ndarray, rgbas: np.ndarray, thickness: float, pixel_array: Any) -> Any:
         coords = self._cam.points_to_pixel_coords(pmobject, points)
@@ -208,3 +230,137 @@ class RecordContext:
         n = sum(r for _, r in self._written)
         self._written.clear()
         return d, n
+
+
+class _TeeCtx:
+    """Records exactly the op pass 1 records, then forwards it to the real Cairo context."""
+
+    def __init__(self, ops: list[tuple[Any, ...]], real: Any):
+        self._ops, self._real = ops, real
+
+    def __getattr__(self, name: str) -> Any:
+        if name not in DRAWING:
+            raise AttributeError(f"the tee does not forward cairo.Context.{name}")
+        forward = getattr(self._real, name)
+
+        def tee(*args: Any) -> Any:
+            self._ops.append(_op(name, args))
+            return forward(*args)
+
+        return tee
+
+
+class TeeContext(RecordContext):
+    """A worker's recorder: every call pass 1 records is both digested (with the same op encoder) and forwarded, so
+    its frames carry real pixels and a digest the parent compares with pass 1's. It demands nothing more of the camera
+    than pass 1 does and guarantees more (Liskov)."""
+
+    def __init__(self, scene: Any):
+        super().__init__(scene)
+        self._static: tuple[np.ndarray, bytes] | None = None  # the current static_image and its digest
+        self._last: tuple[np.ndarray, bytes] | None = None
+        renderer = scene.renderer
+        save = renderer.save_static_frame_data
+
+        def save_static(sc: Any, static_mobjects: Any) -> Any:
+            out = save(sc, static_mobjects)
+            self._static = self._last if renderer.static_image is not None else None
+            return out
+
+        renderer.save_static_frame_data = save_static
+
+    def _context(self, pixel_array: np.ndarray) -> Any:
+        self._matrix()
+        return _TeeCtx(self._ops, self._orig["get_cairo_context"](pixel_array))
+
+    def _points(self, pmobject: Any, points: np.ndarray, rgbas: np.ndarray, thickness: float, pixel_array: Any) -> Any:
+        super()._points(pmobject, points, rgbas, thickness, pixel_array)
+        return self._orig["display_point_cloud"](pmobject, points, rgbas, thickness, pixel_array)
+
+    def _image(self, image_mobject: Any, pixel_array: np.ndarray) -> Any:
+        super()._image(image_mobject, pixel_array)
+        return self._orig["display_image_mobject"](image_mobject, pixel_array)
+
+    def _reset(self) -> Any:
+        super()._reset()
+        return self._orig["reset"]()
+
+    def _load(self, frame: Any) -> None:
+        assert self._static is not None and self._static[0] is frame, "a background frame the tee did not snapshot"
+        self._ops.clear()
+        self._canvas = self._static[1]
+        self._orig["set_frame_to_background"](frame)
+
+    def _snapshot(self) -> Any:
+        super()._snapshot()
+        real = self._orig_get_frame()
+        self._last = (real, self._canvas)
+        return real
+
+    def _write(self, frame: Any, *, repeat: int = 1) -> None:
+        self._written.append((self._canvas, repeat))
+        self._orig_write(frame, repeat=repeat)
+
+
+def join(parts: list[Path], out: Path) -> int:
+    """Concatenate one beat's partial files without re-encoding (Manim's own combine pattern, vendored from Explainers'
+    render.py); returns the number of frames."""
+    import io
+
+    import av
+
+    manifest = "".join(f"file 'file:{p}'\n" for p in parts).encode()
+    src = av.open(io.BytesIO(manifest), mode="r", options={"safe": "0", "an": "1"}, format="concat")
+    dst = av.open(str(out), mode="w")
+    stream = dst.add_stream_from_template(src.streams.video[0])
+    frames = 0
+    for packet in src.demux(src.streams.video[0]):
+        if packet.dts is None:
+            continue
+        packet.dts = None
+        packet.stream = stream
+        dst.mux(packet)
+        frames += 1
+    dst.close()
+    src.close()
+    return frames
+
+
+def stream_check(path: Path, settings: Settings) -> list[str]:
+    """What the clip's stream declares against what ENCODE and the render settings require: codec, pixel format,
+    size and frame rate. Drawing is covered by tee verification; encoding is covered here."""
+    import av
+
+    with av.open(str(path)) as f:
+        v = f.streams.video[0]
+        got = {
+            "codec": v.codec_context.name,
+            "pix_fmt": v.codec_context.pix_fmt,
+            "size": (v.width, v.height),
+            "fps": v.average_rate,
+        }
+    want = {
+        "codec": "h264",
+        "pix_fmt": OUTPUT["pixel_format"],
+        "size": (settings.pixel_width, settings.pixel_height),
+        "fps": settings.frame_rate,
+    }
+    return [f"{k} {got[k]} ≠ {want[k]}" for k in want if got[k] != want[k]]
+
+
+def identity() -> dict[str, str]:
+    """Everything after the frames that shapes a clip's bytes, besides the render settings: this file (the Recorder,
+    ENCODE, join) and the drawing and encoding libraries. pixman is read from its pkg-config record: it can change
+    antialiased pixels for identical draw calls."""
+    import subprocess
+    import sys
+    from importlib.metadata import version
+
+    pixman = subprocess.run(["pkg-config", "--modversion", "pixman-1"], capture_output=True, text=True, check=True)
+    return {
+        "clip.py": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "python": sys.version,
+        **{d: version(d) for d in ("manim", "pycairo", "av", "numpy", "pillow")},
+        "cairo": cairo.cairo_version_string(),
+        "pixman": pixman.stdout.strip(),
+    }

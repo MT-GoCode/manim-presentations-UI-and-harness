@@ -65,13 +65,13 @@ class _Beat:
 
 
 class Talk(Scene):
-    """One chapter's scene. `recorder` digests every frame the chapter writes (pass 1's RecordContext, a worker's
-    TeeContext)."""
+    """One chapter's scene. `recorder` digests every frame the chapter writes: pass 1's RecordContext (no pixels) or
+    a worker's TeeContext (pixels too); the type is chosen once, by the process that builds the scene."""
 
-    def __init__(self, chapter: Path, root: Path, title: str, **kwargs: Any):
+    def __init__(self, chapter: Path, root: Path, title: str, recorder: type[RecordContext], **kwargs: Any):
         super().__init__(**kwargs)
         self.chapter, self.root, self.title = chapter, root, title
-        self.recorder = RecordContext(self)
+        self.recorder = recorder(self)
         self.beats: list[_Beat] = []
         self._anchors: list[Mobject] = []  # everything attached to stays alive, so its id is never reused
 

@@ -15,3 +15,25 @@ Edge cases
 # text: Text and TeX
 
 ## words: Words and a formula
+
+# motion: Updaters cleared mid-talk
+
+## spin
+
+## spin-off
+
+## after-spin
+
+# closures: Accumulated state
+
+## accumulate
+
+## after-accumulate
+
+## after-again
+
+# paths: Images, point clouds, background images
+
+## pictures
+
+## ordered: Draw order from a set
