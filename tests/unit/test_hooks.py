@@ -331,9 +331,11 @@ def install_size_hooks(monkeypatch):
     """The pass-1 size hooks, restored after the test (they patch Manim classes)."""
     from manim import Mobject, Paragraph, Transform, TransformFromCopy
 
-    patched = (Paragraph, "__init__"), (Transform, "clean_up_from_scene"), (TransformFromCopy, "clean_up_from_scene")
-    for cls, name in (*patched, (Mobject, "become")):
+    for cls, name in ((Paragraph, "__init__"), (Transform, "clean_up_from_scene"), (Mobject, "become")):
         monkeypatch.setattr(cls, name, getattr(cls, name))
+    # TransformFromCopy inherits its clean-up: set then delete, so undo leaves it inheriting again.
+    monkeypatch.setattr(TransformFromCopy, "clean_up_from_scene", None)
+    monkeypatch.delattr(TransformFromCopy, "clean_up_from_scene")
     manim_hooks.install_size_references()
 
 
