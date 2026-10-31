@@ -102,8 +102,8 @@ PAGE_JS = f"({_PAGE})({ROW}, {CELLS});"
 class Player:
     """One exported page in one browser, observed only through the stage's pixels, the DOM and the Blob ledger."""
 
-    def __init__(self, page, aborted: list[str]):
-        self.page, self.aborted = page, aborted
+    def __init__(self, page):
+        self.page = page
 
     def front(self) -> tuple[int, int] | None:
         """(beat index, frame index) shown at the stage's centre."""

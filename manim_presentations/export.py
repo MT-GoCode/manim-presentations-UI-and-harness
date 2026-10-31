@@ -9,6 +9,7 @@ import multiprocessing
 import os
 import shutil
 import tempfile
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -33,6 +34,13 @@ DOM_KEY = {
     "PageUp": ("PageUp",),
     "PageDown": ("PageDown",),
     "R": ("r", "R"),
+}
+
+# What each --transcript mode puts in a beat's manifest entry: nothing, the spoken text, or that and the private notes.
+TRANSCRIPT: dict[str, Callable[[script.Beat], dict[str, str]]] = {
+    "none": lambda b: {},
+    "narration": lambda b: {"narration": b.narration},
+    "full": lambda b: {"narration": b.narration, "notes": b.notes},
 }
 
 say = functools.partial(print, flush=True)  # tests block on these lines from a pipe
@@ -63,7 +71,7 @@ def encode(src: Path, dst: Path, width: int, height: int, crf: int, fps: int) ->
         out.mux(vout.encode())
 
 
-def export(root: Path, out: Path, height: int | None, crf: int | None, workers: int | None) -> int:
+def export(root: Path, out: Path, height: int | None, crf: int | None, transcript: str, workers: int | None) -> int:
     layout = Layout(root)
     layout.export_tmp.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(dir=layout.export_tmp))
@@ -91,8 +99,16 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, workers: 
             "fps": r.fps,
             "chapters": {c.slug: c.title or c.slug for c in talk.chapters},
             "keys": {key: a for q, a in protocol.KEYS.items() for key in DOM_KEY[q]},
+            "transcript": transcript,
             "beats": [
-                {"chapter": b.chapter, "slug": b.slug, "title": b.title or b.slug, "kind": b.kind, "frames": b.frames}
+                {
+                    "chapter": b.chapter,
+                    "slug": b.slug,
+                    "title": b.title or b.slug,
+                    "kind": b.kind,
+                    "frames": b.frames,
+                    **TRANSCRIPT[transcript](talk.beat(b.slug)),
+                }
                 for b in deck.beats
             ],
         }

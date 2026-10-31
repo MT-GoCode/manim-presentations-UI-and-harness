@@ -1,6 +1,7 @@
-"""The CLI chain a user runs: build, then shots (the export step joins here from its sub-journey)."""
+"""The CLI chain a user runs: build, then shots, then export."""
 
 import json
+import re
 
 import av
 import numpy as np
@@ -56,3 +57,34 @@ def test_shots_refuses_a_stale_build(tmp_path):
     (root / "chapters" / "opening.py").write_text((root / "chapters" / "opening.py").read_text() + "\n")
     r = mpres("shots", str(root), "--out", str(tmp_path / "shots"))
     assert r.returncode == 1 and "chapters/opening.py" in r.stderr and "run: mpres build" in r.stderr
+
+
+def test_build_then_shots_then_export_plays_the_template_talk_offline_to_its_end(tmp_path):
+    from playwright.sync_api import sync_playwright
+
+    root = built(tmp_path)
+    assert mpres("shots", str(root), "--out", str(tmp_path / "shots"), "--workers", str(TEST_WORKERS)).returncode == 0
+    out = tmp_path / "hello.html"
+    r = mpres("export", str(root), "--out", str(out), "--transcript", "full", "--workers", str(TEST_WORKERS))
+    assert r.returncode == 0 and "export: height 270 · width 480 · crf 28" in r.stdout, r.stderr
+    beats = json.loads((root / "build" / "index.json").read_text())["beats"]
+    page_beats = json.loads(re.search(r'id="manifest">(.*?)</script>', out.read_text(), re.S)[1])["beats"]
+    assert [b["slug"] for b in page_beats] == [b["slug"] for b in beats]
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(channel="chrome")
+        context = browser.new_context()
+        requests: list[str] = []
+        context.route("**/*", lambda rt: (requests.append(rt.request.url), rt.continue_()))
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(out.as_uri())
+        front = "() => { const v = document.querySelector('#stage video[style*=\"z-index\"]'); return v && v.readyState >= 2 && v; }"
+        page.wait_for_function(front)
+        for _ in beats:  # every Next raises a new, decodable video, until the last beat plays
+            old = page.evaluate_handle(front)
+            page.keyboard.press("ArrowDown")
+            page.wait_for_function(f"(old) => {{ const v = ({front})(); return v && v !== old; }}", arg=old)
+        page.wait_for_function(f"() => {{ const v = ({front})(); return v.ended || v.loop; }}")
+        browser.close()
+    assert errors == [] and all(u.startswith(("file:", "blob:")) for u in requests), (errors, requests)

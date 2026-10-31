@@ -86,7 +86,7 @@ def run_export(root: Path, args: argparse.Namespace) -> int:
     from manim_presentations.headroom import TooBig
 
     try:
-        return export(root, args.out, args.height, args.crf, args.workers)
+        return export(root, args.out, args.height, args.crf, args.transcript, args.workers)
     except (IncompatibleBuild, Stale, ExportError, TooBig) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -111,6 +111,12 @@ def parser() -> argparse.ArgumentParser:
     e.add_argument("--height", type=even, metavar="H", help="video height (default: min(1080, the source height))")
     e.add_argument(
         "--crf", type=crf, metavar="C", help="x264 quality, 0-51, lower is better (default: measured, printed)"
+    )
+    e.add_argument(
+        "--transcript",
+        choices=("none", "narration", "full"),
+        default="none",
+        help="none: no text of the script; narration: what is spoken; full: plus the private > notes (default: none)",
     )
     e.add_argument("--workers", type=positive, metavar="N", help=workers)
     e.set_defaults(run=run_export)

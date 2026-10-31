@@ -38,15 +38,21 @@ def frames_talk(built: Path, tmp_path: Path) -> Path:
 
 
 @pytest.fixture(scope="session")
-def page_file(built: Path) -> Path:
-    """The built frames talk exported once per session with the defaults; read-only for every test."""
-    out = built.parent / "frames.html"
-    with (built.parent / "export.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not out.exists():
-            r = mpres("export", str(built), "--out", str(out), "--workers", str(TEST_WORKERS))
-            assert r.returncode == 0, r.stdout + r.stderr
-    return out
+def exported(built: Path):
+    """exported(transcript) → the built frames talk exported once per session with that --transcript; read-only."""
+
+    def make(transcript: str) -> Path:
+        out = built.parent / f"frames-{transcript}.html"
+        with (built.parent / "export.lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if not out.exists():
+                r = mpres(
+                    "export", str(built), "--out", str(out), "--transcript", transcript, "--workers", str(TEST_WORKERS)
+                )
+                assert r.returncode == 0, r.stdout + r.stderr
+        return out
+
+    return make
 
 
 @pytest.fixture(scope="session")
@@ -64,28 +70,40 @@ def browser(request: pytest.FixtureRequest, playwright):
 
 
 @pytest.fixture
-def player(browser, page_file: Path):
-    """The exported page, offline: every request that is not the file itself or a Blob is aborted and recorded, and
-    must not happen; neither may a page error."""
-    context = browser.new_context(viewport={"width": 960, "height": 600})
-    aborted: list[str] = []
+def open_player(browser, exported):
+    """open_player(transcript, viewport) → the exported page, offline: every request that is not the file itself or a
+    Blob is aborted and recorded, and must not happen; neither may a page error."""
+    opened = []
 
-    def route(r) -> None:
-        if r.request.url.startswith(("file:", "blob:")):
-            r.continue_()
-        else:
-            aborted.append(r.request.url)
-            r.abort()
+    def make(transcript: str = "none", viewport: tuple[int, int] = (960, 600)) -> Player:
+        context = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]})
+        aborted: list[str] = []
+        errors: list[str] = []
 
-    context.route("**/*", route)
-    context.add_init_script(PAGE_JS)
-    page = context.new_page()
-    errors: list[str] = []
-    page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(page_file.as_uri())
-    page.evaluate("T.watch()")
-    p = Player(page, aborted)
-    p.settle(0, 0)  # Before: beat 0's first frame
-    yield p
-    context.close()
-    assert aborted == [] and errors == []
+        def route(r) -> None:
+            if r.request.url.startswith(("file:", "blob:")):
+                r.continue_()
+            else:
+                aborted.append(r.request.url)
+                r.abort()
+
+        context.route("**/*", route)
+        context.add_init_script(PAGE_JS)
+        page = context.new_page()
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        opened.append((context, aborted, errors))
+        page.goto(exported(transcript).as_uri())
+        page.evaluate("T.watch()")
+        p = Player(page)
+        p.settle(0, 0)  # Before: beat 0's first frame
+        return p
+
+    yield make
+    for context, aborted, errors in opened:
+        context.close()
+        assert aborted == [] and errors == []
+
+
+@pytest.fixture
+def player(open_player) -> Player:
+    return open_player()

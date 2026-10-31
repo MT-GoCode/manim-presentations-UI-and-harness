@@ -15,8 +15,8 @@ LOOP = 2
 
 
 @pytest.fixture
-def frames(page_file):
-    beats = manifest(page_file.read_text())["beats"]
+def frames(exported):
+    beats = manifest(exported("none").read_text())["beats"]
     assert [b["kind"] for b in beats] == ["beat", "beat", "loop", "beat"]
     return [b["frames"] for b in beats]
 

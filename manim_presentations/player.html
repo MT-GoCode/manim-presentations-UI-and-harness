@@ -4,7 +4,16 @@
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 15px/1.4 system-ui, sans-serif; }
   body { display: flex; flex-direction: column; }
-  #stage { position: relative; flex: 1; min-height: 0; }
+  #main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #stage { position: relative; flex: 1; min-height: 0; min-width: 0; }
+  #transcript { height: 38%; overflow-y: auto; padding: 0 16px; background: #0d0d0d; border-left: 1px solid #222; }
+  #transcript h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #888; margin: 18px 0 6px; }
+  #transcript section { padding: 8px 10px; margin: 0 -10px; border-radius: 6px; cursor: pointer; }
+  #transcript section.current { background: #1d2f57; }
+  #transcript h3 { font-size: 15px; margin: 0 0 4px; color: #fff; }
+  #transcript p { margin: 0 0 4px; white-space: pre-wrap; }
+  #transcript p.note { color: #c9a227; font-style: italic; }
+  @media (min-aspect-ratio: 1/1) { #main { flex-direction: row; } #transcript { width: 32%; height: auto; } }  /* last: it overrides the portrait sizes above */
   #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   #bar { display: flex; gap: 8px; align-items: center; padding: 8px; background: #111; }
   #bar button { font: inherit; padding: 6px 14px; border: 1px solid #444; border-radius: 6px; background: #222; color: #eee; }
@@ -13,7 +22,7 @@
   body.boundary #bar { box-shadow: inset 0 0 0 3px #d33; }
 </style></head>
 <body>
-<div id="stage"></div>
+<div id="main"><div id="stage"></div></div>
 <div id="bar">
   <button id="previous" title="Previous (↑, PageUp)">▲ Previous</button>
   <button id="next" title="Next (↓, PageDown)">▼ Next</button>
@@ -92,6 +101,34 @@ function show({beat, frame, play}) {
   stage.prepend(v);
 }
 
+// The transcript panel exists only when the export carries one; its entries are built as text, never as markup.
+const entries = new Map();
+if (M.transcript !== "none") {
+  const panel = document.createElement("aside");
+  panel.id = "transcript";
+  for (const [slug, title] of Object.entries(M.chapters)) {
+    panel.append(Object.assign(document.createElement("h2"), {textContent: title}));
+    for (const b of M.beats.filter((b) => b.chapter === slug)) {
+      const entry = document.createElement("section");
+      entry.append(Object.assign(document.createElement("h3"), {textContent: b.title}));
+      entry.append(Object.assign(document.createElement("p"), {textContent: b.narration}));
+      if (b.notes) entry.append(Object.assign(document.createElement("p"), {className: "note", textContent: b.notes}));
+      entry.addEventListener("click", () => act("jump", {kind: "at", slug: b.slug}));
+      entries.set(b.slug, entry);
+      panel.append(entry);
+    }
+  }
+  document.getElementById("main").append(panel);
+  const toggle = Object.assign(document.createElement("button"), {id: "toggle", textContent: "Transcript"});
+  toggle.addEventListener("click", () => { panel.hidden = !panel.hidden; });
+  document.getElementById("bar").append(toggle);
+}
+function highlight() {  // Before is beat 0's first frame, so beat 0's text is the one on screen
+  const slug = position.kind === "at" ? position.slug : SLUGS[0];
+  for (const [s, entry] of entries) entry.classList.toggle("current", s === slug);
+  entries.get(slug)?.scrollIntoView({block: "nearest"});
+}
+
 let position = {kind: "before"}, flashing = 0;
 function act(action, to) {
   const r = to ? {kind: "moved", position: to} : step(position, action, SLUGS);
@@ -103,6 +140,7 @@ function act(action, to) {
   }
   position = r.position;
   jump.value = position.kind === "at" ? position.slug : "";
+  highlight();
   show(showFor(position, action));
 }
 
@@ -122,5 +160,6 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();  // a focused jump list never also moves its own selection
   if (!e.repeat) act(action);  // a held key or a repeating clicker advances once
 });
+highlight();
 show(showFor(position));
 </script></body></html>

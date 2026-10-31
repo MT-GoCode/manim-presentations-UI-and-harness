@@ -27,7 +27,13 @@ MiB = 2**20
 # whole in-process unit run; build, a pass-1 build at --workers 4 on the 2160-px geometry fixture (parent 191 MiB +
 # four 180 MiB children); e2e, one setup.sh run on a repo copy. Every xdist slot is sized for the heaviest, so slots
 # never oversubscribe (a stated trade: a light test holds a heavy slot).
-TEST_COST = {"unit": (0.5, 213 * MiB), "build": (1.1, 911 * MiB), "e2e": (1.05, 245 * MiB)}
+TEST_COST = {
+    "unit": (0.5, 213 * MiB),
+    "build": (1.1, 911 * MiB),
+    "e2e": (1.05, 245 * MiB),
+    # export: the frames fixture built and exported, then headless Chrome through two player tests (psutil tree sum)
+    "export": (0.54, 1345 * MiB),
+}
 
 
 def pytest_xdist_auto_num_workers(config: pytest.Config) -> int:
