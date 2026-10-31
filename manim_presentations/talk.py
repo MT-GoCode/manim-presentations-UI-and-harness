@@ -28,7 +28,7 @@ from manim import (
 
 from manim_presentations import manim_hooks
 from manim_presentations.clip import RecordContext
-from manim_presentations.records import Animation, BeatKind, BeatRecord, Box, Unit
+from manim_presentations.records import Animation, BeatKind, Box, LoopBeat, PlainBeat, Unit
 
 GLYPHS = (Text, MarkupText, SingleStringMathTex, DecimalNumber, Paragraph)  # every leaf under these is a glyph
 BACKGROUND = (NumberPlane, Axes)  # their lines never count for overlap
@@ -47,17 +47,23 @@ class _Beat:
         self.slug, self.line, self.first_anim = slug, line, first_anim
         self.kind: BeatKind = kind
         self.animations: list[Animation] = []
+        self.rasters: tuple[str, str] | None = None  # loops, in pass 1: (S_start, S_end) .npy file names
         self.end: tuple[Unit, ...] = ()
 
-    def record(self) -> BeatRecord:
-        return BeatRecord(
-            slug=self.slug,
-            kind=self.kind,
-            line=self.line,
-            first_anim=self.first_anim,
-            animations=tuple(self.animations),
-            end=self.end,
-        )
+    def record(self) -> PlainBeat | LoopBeat:
+        common = {
+            "slug": self.slug,
+            "line": self.line,
+            "first_anim": self.first_anim,
+            "animations": tuple(self.animations),
+            "end": self.end,
+        }
+        match self.kind:
+            case "beat":
+                return PlainBeat(**common)
+            case "loop":
+                assert self.rasters is not None, "pass 1 captures every loop's rasters"
+                return LoopBeat(**common, s_start=self.rasters[0], s_end=self.rasters[1])
 
 
 class Talk(Scene):
@@ -147,7 +153,27 @@ class Talk(Scene):
 
 
 class Pass1Talk(Talk):
-    """Pass 1 also records what is on screen at each beat's end, where the camera draws it, with its chapter line."""
+    """Pass 1 also records what is on screen at each beat's end, where the camera draws it, with its chapter line;
+    and, for a loop, the canonical rasters of its first frame and of its state after its last play."""
+
+    def __init__(
+        self, chapter: Path, root: Path, title: str, recorder: type[RecordContext], rasters: Path, **kwargs: Any
+    ):
+        super().__init__(chapter, root, title, recorder, **kwargs)
+        self.raster_dir = rasters
+        manim_hooks.on_first_frame(self, self._first_frame)
+
+    def _first_frame(self) -> None:
+        b = self.beats[-1]
+        if b.kind == "loop" and manim_hooks.play_index(self) == b.first_anim:
+            np.save(self.raster_dir / f"{b.slug}.start.npy", manim_hooks.canonical_raster(self))
+
+    def play(self, *args: Any, **kwargs: Any) -> None:
+        super().play(*args, **kwargs)
+        b = self.beats[-1]
+        if b.kind == "loop":  # only the last play's state is kept: the last play is known at the next beat
+            np.save(self.raster_dir / f"{b.slug}.end.npy", manim_hooks.canonical_raster(self))
+            b.rasters = (f"{b.slug}.start.npy", f"{b.slug}.end.npy")
 
     def _close(self) -> None:
         self.beats[-1].end = self._end_state()

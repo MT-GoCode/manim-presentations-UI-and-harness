@@ -37,3 +37,13 @@ Edge cases
 ## pictures
 
 ## ordered: Draw order from a set
+
+# loops: Loops that close
+
+## cycle: Mixing Deluxe's queue pattern
+
+## waits: A loop between two waits
+
+## hand-closed: Closed by different objects
+
+## ticking: A non-time updater that returns

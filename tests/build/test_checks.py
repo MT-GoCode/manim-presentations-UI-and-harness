@@ -56,6 +56,10 @@ def test_edge_and_hello_build_clean(talk):
         ),
         ("no-construct", r"error: chapters/no-construct\.py defines no construct\(talk\)"),
         ("no-beat", r"error: chapters/no-beat\.py: no talk\.beat\(\) in the chapter"),
+        (
+            "unclosed",
+            r'error: chapters/unclosed\.py:5 loop "drifts" does not close: its end state differs from its first frame in \d+ pixels',
+        ),
     ],
 )
 def test_each_authoring_error_is_named_at_its_line(talk, overlay, expected):

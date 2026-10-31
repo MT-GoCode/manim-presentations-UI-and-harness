@@ -115,7 +115,7 @@ def main(argv: list[str]) -> int:
     failure: Exception | None = None
     guard.active = True
     try:
-        scene = Pass1Talk(chapter, snapshot_path, title, clip.RecordContext)
+        scene = Pass1Talk(chapter, snapshot_path, title, clip.RecordContext, out_path)
         scene.render()
     except Exception as e:  # routed below: the guard's own mark first, then an authoring error, then a real crash
         failure = e

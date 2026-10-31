@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import psutil
 
 from manim_presentations import clip, geometry, headroom, schedule, stills
@@ -37,7 +38,7 @@ from manim_presentations.deck import (
     new_build_id,
 )
 from manim_presentations.geometry import Finding
-from manim_presentations.records import CHAPTER_RECORD, BeatRecord, ChapterRecord
+from manim_presentations.records import CHAPTER_RECORD, BeatRecord, ChapterRecord, LoopBeat, PlainBeat
 from manim_presentations.script import Script
 from manim_presentations.script import load as load_script
 from manim_presentations.settings import Settings, SettingsError
@@ -294,6 +295,34 @@ def prune_cache(shared: Path, records: list[ChapterRecord]) -> int:
     return n
 
 
+# Pixels that may differ between a loop's first frame and its end state: 0. P7(d) measured pixel-closed loops
+# (Mixing Deluxe's cycle() pattern) byte-equal at 480×270, 1920×1080 and 3456×2168; the edge fixture's loops re-measure.
+LOOP_TOLERANCE = 0
+
+
+def loop_closure(out: Path, record: ChapterRecord) -> list[Finding]:
+    """A loop wraps from its last frame to frame 0 with no jump only if the state after its last play draws exactly
+    what frame 0 shows: compared as pixels, since identical pictures can come from different draw calls."""
+    findings: list[Finding] = []
+    for b in record.beats:
+        match b:
+            case LoopBeat():
+                start, end = np.load(out / b.s_start), np.load(out / b.s_end)
+                differ = int((np.abs(start.astype(int) - end.astype(int)) > LOOP_TOLERANCE).any(axis=-1).sum())
+                if differ:
+                    findings.append(
+                        Finding(
+                            "loop",
+                            f'{record.file}:{b.line} loop "{b.slug}" does not close: its end '
+                            f"state differs from its first frame in {differ} pixels; end where it "
+                            "began, or make it talk.beat()",
+                        )
+                    )
+            case PlainBeat():
+                pass
+    return findings
+
+
 def report(findings: list[Finding]) -> None:
     counts = Counter(f.kind for f in findings)
     raise BuildError(
@@ -389,6 +418,7 @@ def build(talk: Path, workers: int | None) -> int:
             if not b.animations
         ]
         findings += geometry.check(r.beats, settings.frame_width, settings.frame_height, settings.pixel_width)
+        findings += loop_closure(layout.process(f"pass1-{r.chapter}"), r)
     if findings:
         report(findings)
 

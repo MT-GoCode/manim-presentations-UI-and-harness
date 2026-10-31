@@ -1,9 +1,9 @@
 """Facts the scene side records and the build side reads (pass 1's records.json). A leaf: imports nothing from the
 engine. Coordinates are scene units as the camera draws them."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 BeatKind = Literal["beat", "loop"]
 """Marked at the call (`talk.beat` / `talk.loop`); a tag carried through the index, the Presenter and the export."""
@@ -39,13 +39,28 @@ class Animation(_Frozen):
     frames: int
 
 
-class BeatRecord(_Frozen):
+class _Beat(_Frozen):
     slug: str
-    kind: BeatKind
     line: int  # the talk.beat/talk.loop call's line in the chapter file
     first_anim: int  # the chapter scene's play index of this beat's first animation
     animations: tuple[Animation, ...]
     end: tuple[Unit, ...]
+
+
+class PlainBeat(_Beat):
+    kind: Literal["beat"] = "beat"
+
+
+class LoopBeat(_Beat):
+    """A loop also carries the two canonical state rasters its closure check compares: what its first frame shows,
+    and the state after its last play (.npy files beside records.json)."""
+
+    kind: Literal["loop"] = "loop"
+    s_start: str
+    s_end: str
+
+
+BeatRecord = Annotated[PlainBeat | LoopBeat, Field(discriminator="kind")]
 
 
 class ChapterRecord(_Frozen):

@@ -13,7 +13,7 @@ import numpy as np
 
 from manim_presentations.records import BeatRecord, Unit
 
-Kind = Literal["pairing", "empty-beat", "overlap", "off-frame", "transient"]
+Kind = Literal["pairing", "empty-beat", "overlap", "off-frame", "transient", "loop"]
 
 
 class Finding(NamedTuple):

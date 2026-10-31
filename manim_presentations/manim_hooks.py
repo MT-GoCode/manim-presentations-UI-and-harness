@@ -8,7 +8,10 @@ Manim touches here (each tested one to one in tests/unit/test_hooks.py):
 - exact fast-forward: `renderer.update_skipping_status` and, for plays before `from_animation_number` only, the IO
   calls `camera.capture_mobjects`, `camera.reset`, `camera.set_frame_to_background`, `renderer.get_frame`,
   `file_writer.add_partial_movie_file`, `begin_animation`, `end_animation` and `write_frame`;
-- the partial-file mapping: `file_writer.partial_movie_files`, one entry per play (None for skipped ones)."""
+- the partial-file mapping: `file_writer.partial_movie_files`, one entry per play (None for skipped ones);
+- the loop-closure capture points: `renderer.render` (a play's first frame, after `update_to_time(0)`) and
+  `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws on a fresh, unpatched `Camera`
+  in Manim's order: the play's `static_mobjects`, then its `moving_mobjects` (which include the foreground)."""
 
 import sys
 from pathlib import Path
@@ -112,3 +115,46 @@ def exact_fast_forward(scene: Any) -> None:
 def partial_files(scene: Any) -> dict[int, str]:
     """{play index: the partial file Manim wrote for it}, for the plays this process rendered."""
     return {i: p for i, p in enumerate(scene.renderer.file_writer.partial_movie_files) if p is not None}
+
+
+def on_first_frame(scene: Any, callback: Any) -> None:
+    """Call `callback()` once per play, at exactly what the play's frame 0 shows: before the first
+    `renderer.render(scene, t=0, …)` (after `update_to_time(0)` ran animation and scene updaters), or, in a frozen
+    wait, at `freeze_current_frame` (its `update_frame` before it only draws)."""
+    r = scene.renderer
+    render, freeze = r.render, r.freeze_current_frame
+    seen = {"play": -1}
+
+    def first() -> None:
+        if seen["play"] != r.num_plays:
+            seen["play"] = r.num_plays
+            callback()
+
+    def render_first(sc: Any, t: float, moving: Any = None) -> None:
+        first()
+        render(sc, t, moving)
+
+    def freeze_first(duration: float) -> None:
+        first()
+        freeze(duration)
+
+    r.render = render_first
+    r.freeze_current_frame = freeze_first
+
+
+def canonical_raster(scene: Any) -> np.ndarray:
+    """The scene's current state drawn whole on a fresh camera (the Recorder never involved), in the z-order Manim
+    gives a frame: the current play's static mobjects, then its moving ones, then anything since added (a remover's
+    clean-up takes mobjects out of the scene but not out of the play's lists; a replacement's clean-up adds its
+    target to the scene but not to them)."""
+    from manim.camera.camera import Camera
+
+    present = [*scene.mobjects, *(m for m in scene.foreground_mobjects if m not in scene.mobjects)]
+    static = [m for m in scene.static_mobjects or [] if m in present]
+    moving = [m for m in scene.moving_mobjects or [] if m in present]
+    rest = [m for m in present if m not in static and m not in moving]
+    camera = Camera()
+    camera.reset()
+    for group in (static, moving, rest):
+        camera.capture_mobjects(group)
+    return camera.pixel_array.copy()

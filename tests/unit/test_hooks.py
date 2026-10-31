@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from manim import BLUE, RED, Circle, FadeIn, ImageMobject, PointCloudDot, Scene, Square, tempconfig
+from manim import BLUE, RED, Circle, FadeIn, FadeOut, ImageMobject, PointCloudDot, Scene, Square, tempconfig
 
 from manim_presentations import clip, manim_hooks
 from manim_presentations.settings import Settings
@@ -269,3 +269,54 @@ def test_skip_mode_fast_forward_would_diverge(monkeypatch):
     monkeypatch.setattr(manim_hooks, "exact_fast_forward", lambda scene: None)
     got, _, _, want = tee_run(stateful, 3)
     assert got != want
+
+
+def first_frame_vs_raster(build_scene) -> tuple[np.ndarray, np.ndarray]:
+    """(the canonical raster at the first play's capture point, the pixels Manim actually drew for that frame)."""
+    clip.render_config(SETTINGS)
+    captured: dict[str, np.ndarray] = {}
+    with tempconfig({"media_dir": tempfile.mkdtemp()}):
+
+        class S(Scene):
+            def construct(self):
+                build_scene(self)
+
+        s = S()
+        manim_hooks.on_first_frame(s, lambda: captured.setdefault("raster", manim_hooks.canonical_raster(s)))
+        write = s.renderer.file_writer.write_frame
+
+        def first_written(frame, **k):
+            captured.setdefault("drawn", np.asarray(frame).copy())
+            return write(frame, **k)
+
+        s.renderer.file_writer.write_frame = first_written
+        s.render()
+    return captured["raster"], captured["drawn"]
+
+
+@pytest.mark.parametrize(
+    "build_scene",
+    [
+        lambda s: (s.add(Square(color=BLUE)), s.play(FadeIn(Circle(color=RED)))),  # a moving play's frame 0
+        lambda s: (s.add(Square(color=BLUE)), s.wait(0.2)),  # a frozen wait's frame
+    ],
+    ids=["play", "frozen-wait"],
+)
+def test_the_start_capture_point_is_exactly_frame_0(build_scene):
+    raster, drawn = first_frame_vs_raster(build_scene)
+    assert np.array_equal(raster[..., :3], drawn[..., :3])
+
+
+def test_the_end_raster_leaves_out_what_a_play_removed():
+    """FadeOut's clean-up takes its mobject out of the scene but not out of the play's moving list."""
+    clip.render_config(SETTINGS)
+    with tempconfig({"dry_run": True}):
+        s = Scene()
+        gone = Circle(color=RED)
+        s.add(gone)
+        s.play(FadeOut(gone))
+        after = manim_hooks.canonical_raster(s)
+        empty = Scene()
+        empty.play(FadeIn(Square().set_opacity(0)))
+        blank = manim_hooks.canonical_raster(empty)
+    assert np.array_equal(after, blank)
