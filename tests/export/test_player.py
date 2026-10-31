@@ -62,6 +62,13 @@ def test_the_jump_list_follows_the_position_so_a_jump_back_works(player, frames)
     player.transition(lambda: player.page.select_option("#jump", "d"), 2, 3, frames[3] - 1)
 
 
+def test_the_jump_list_clears_at_before_so_the_first_beat_can_be_picked(player, frames):
+    player.transition(press(player, "ArrowDown"), 0, 0, 0)
+    player.transition(press(player, "ArrowUp"), 0, 0, 0)  # Before
+    assert player.page.eval_on_selector("#jump", "s => s.value") == ""
+    player.transition(lambda: player.page.select_option("#jump", "a"), 0, 0, frames[0] - 1)
+
+
 def test_a_boundary_flashes_and_changes_nothing(player):
     player.page.keyboard.press("ArrowUp")  # Previous at Before
     assert player.page.evaluate("document.body.classList.contains('boundary')")
