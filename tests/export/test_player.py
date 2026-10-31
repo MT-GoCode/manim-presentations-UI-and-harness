@@ -167,7 +167,12 @@ def test_buttons_and_clicker_keys_act_like_the_arrows_and_auto_repeat_does_nothi
     player.transition(lambda: player.page.click("#replay"), 0, 0, 0)
     player.transition(press(player, "Shift+KeyR"), 0, 0, 0)  # Qt's Key_R is R with or without Shift
     player.transition(lambda: player.page.click("#previous"), 0, 0, 0)  # Before
-    for held in ("{key: 'ArrowDown', repeat: true}", "{key: 'ArrowDown', metaKey: true}", "{key: 'r', ctrlKey: true}"):
+    for held in (
+        "{key: 'ArrowDown', repeat: true}",
+        "{key: 'ArrowDown', metaKey: true}",
+        "{key: 'r', ctrlKey: true}",
+        "{key: 'ArrowDown', altKey: true}",
+    ):
         pressed = f"document.dispatchEvent(new KeyboardEvent('keydown', {held}))"  # a held key; the browser's shortcuts
         assert (
             player.page.evaluate(f"() => {{ {pressed}; return document.querySelectorAll('#stage video').length; }}")
