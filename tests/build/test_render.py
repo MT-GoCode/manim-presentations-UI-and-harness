@@ -49,7 +49,7 @@ def test_a_full_build_commits_every_beat_and_a_rebuild_renders_nothing(talk):
     r = ok(build(root))
     assert len(rendered(r)) == len(index(root)["beats"]) == sum(len(c.beats) for c in load(root / "script.md").chapters)
     assert "digests verified" in r.stdout
-    r2 = ok(build(root))
+    r2 = ok(build(root))  # pass 1 runs again in fresh processes: the set-ordered helper draws in the same order
     assert rendered(r2) == [] and "render: 0 beats" in r2.stdout
 
 
@@ -159,12 +159,6 @@ def test_a_clock_read_fails_tee_verification_naming_its_line(talk):
         r"pass 1: the chapter is nondeterministic",
         r.stderr,
     ), r.stderr
-
-
-def test_a_set_ordered_helper_rebuilds_to_zero(talk):
-    root = talk("edge")
-    ok(build(root))
-    assert rendered(ok(build(root))) == []  # pass 1 runs again in fresh processes: same hash seed, same digests
 
 
 def test_a_hostile_cwd_and_user_config_change_nothing(talk, tmp_path):

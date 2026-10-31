@@ -6,9 +6,10 @@ from manim_presentations.schedule import Chunk, chunks
 MP = 7.49
 
 
-def test_cuts_are_the_same_for_the_same_inputs():
-    plays = {"a": {i: 1.0 for i in range(60)}, "b": {i: 2.0 for i in range(10)}}
-    assert chunks(plays, MP) == chunks(dict(plays), MP)
+def test_cuts_match_the_cost_arithmetic():
+    """Two-second plays at 7.49 MP cost 0.853 · 2 = 1.706 s each: from play 0 the 12th reaches 20.5 s ≥ 20; from
+    play 12 the fast-forward adds 0.047 · 12 = 0.564 s, so the 12th of that run (play 23) is again the first over."""
+    assert chunks({"a": {i: 2.0 for i in range(30)}}, MP) == [Chunk("a", 0, 11), Chunk("a", 12, 23), Chunk("a", 24, 29)]
 
 
 def test_a_long_beat_spreads_across_chunks_at_the_cost_target():
@@ -31,4 +32,4 @@ def test_cuts_fall_at_to_render_run_boundaries_and_never_span_chapters():
 
 def test_a_later_start_pays_its_fast_forward():
     near, far = chunks({"a": {i: 1.0 for i in range(40)}}, MP), chunks({"a": {i: 1.0 for i in range(200, 240)}}, MP)
-    assert len(far[0:1]) == 1 and (far[0].last - far[0].first) < (near[0].last - near[0].first)
+    assert (far[0].last - far[0].first) < (near[0].last - near[0].first)
