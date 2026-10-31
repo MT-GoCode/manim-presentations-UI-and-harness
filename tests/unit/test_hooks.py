@@ -75,7 +75,7 @@ def test_render_config_ignores_a_user_manim_cfg(tmp_path):
     code = (
         "from manim import config\nfrom manim_presentations import clip\nfrom manim_presentations.settings import "
         f"Settings\nclip.render_config(Settings.model_validate_json({SETTINGS.model_dump_json()!r}))\n"
-        "print(config.frame_rate, config.pixel_width, config.background_color.to_hex())"
+        "print(config.frame_rate, config.zero_pad, config.write_all, config.save_last_frame)"
     )
     out = subprocess.run(
         [sys.executable, "-P", "-c", code],

@@ -58,6 +58,7 @@ reportMissingTypeStubs = false
 addopts = "-n auto --junitxml=test-results/junit.xml"
 filterwarnings = ["ignore:'audioop' is deprecated:DeprecationWarning:pydub.utils"]  # Manim imports pydub; not ours
 testpaths = ["tests"]
+norecursedirs = [".*", "__pycache__", "fixtures"]  # not pytest's default, which skips any folder named build
 markers = [
     "unit: in-process, no subprocess builds",
     "build: runs mpres build subprocesses",
