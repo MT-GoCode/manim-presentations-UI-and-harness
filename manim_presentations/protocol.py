@@ -2,6 +2,8 @@
 once at the socket edge. Also the Position model (the Presenter owns position; the Audience only echoes it) and the
 one key map the Presenter, the Audience and the exported player share. Imports nothing from the engine."""
 
+import hashlib
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -27,6 +29,12 @@ class At(_Frozen):
 Position = Annotated[Before | At, Field(discriminator="kind")]
 
 Action = Literal["next", "previous", "replay"]
+
+AUDIENCE_CODE = hashlib.sha256(
+    Path(__file__).with_name("audience.py").read_bytes() + Path(__file__).read_bytes()
+).hexdigest()
+"""What an Audience does with each message: `Hello.protocol` carries the running Audience's value, and a Presenter
+whose own value differs (an Audience that survived a `git pull`) relaunches it."""
 
 KEYS: dict[str, Action] = {"Up": "previous", "PageUp": "previous", "Down": "next", "PageDown": "next", "R": "replay"}
 """Qt key names (`Qt.Key.Key_<name>`) to actions. PageUp/PageDown are what presentation clickers send."""

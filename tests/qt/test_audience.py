@@ -5,6 +5,7 @@ import os
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"  # never a window on the screen; set before Qt starts
 
+import contextlib
 import itertools
 import shutil
 import socket
@@ -19,7 +20,7 @@ import av
 import numpy as np
 import pytest
 from conftest import REPO, SUBPROCESS_TIMEOUT
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QSize, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame
 from PySide6.QtNetwork import QLocalSocket
@@ -34,18 +35,24 @@ FRAMES = 30
 WAIT_MS = 5000  # per expected message; P1's slowest first frame was 120 ms at 3456×2168, these clips are 480×270
 
 
+CLIP_BLUE = {"a": 64, "b": 192}
+
+
 @pytest.fixture(scope="module")
 def clips(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
-    """Clips encoded the way builds encode them; frame i is the flat gray 8·i, so a presented frame names its index."""
+    """Clips encoded the way builds encode them. Frame i of clip k is flat: red 8·i names the frame, blue names the
+    clip, so a presented frame says which clip and which frame it is."""
     out = {}
-    for name in ("a", "b"):
+    for name, blue in CLIP_BLUE.items():
         path = out[name] = tmp_path_factory.mktemp("clips") / f"{name}.mp4"
         with av.open(str(path), "w") as f:
             stream = f.add_stream(clip.OUTPUT["video_codec"], rate=FPS, options=clip.ENCODE)
             stream.width, stream.height, stream.pix_fmt = 480, 270, clip.OUTPUT["pixel_format"]
             stream.time_base = Fraction(1, FPS)
             for i in range(FRAMES):
-                frame = av.VideoFrame.from_ndarray(np.full((270, 480, 3), 8 * i, np.uint8), format="rgb24")
+                pixels = np.zeros((270, 480, 3), np.uint8)
+                pixels[..., 0], pixels[..., 2] = 8 * i, blue
+                frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
                 frame.pts = i
                 f.mux(stream.encode(frame))
             f.mux(stream.encode())
@@ -57,9 +64,31 @@ def socket_path() -> str:
     return str(Path(tempfile.mkdtemp(prefix="mpres-", dir="/tmp")) / "audience")
 
 
-def index_of(frame: QVideoFrame) -> int:
+def shows(frame: QVideoFrame) -> tuple[str, int]:
+    """(clip, frame index) of a presented frame, read from its colour."""
     image = frame.toImage()
-    return round(image.pixelColor(image.width() // 2, image.height() // 2).red() / 8)
+    color = image.pixelColor(image.width() // 2, image.height() // 2)
+    return ("a" if color.blue() < 128 else "b"), round(color.red() / 8)
+
+
+@contextlib.contextmanager
+def audience_process(engine: Path | None = None):
+    """A real Audience subprocess (from a package copy when `engine` is given) and a connected stdlib socket."""
+    name = socket_path()
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", **({"PYTHONPATH": str(engine)} if engine else {})}
+    proc = subprocess.Popen([sys.executable, "-P", "-m", "manim_presentations.audience", name, "T"], env=env)
+    deadline = time.monotonic() + SUBPROCESS_TIMEOUT
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(WAIT_MS / 1000)
+            while s.connect_ex(name) != 0:
+                assert proc.poll() is None, "the Audience exited before listening"
+                assert time.monotonic() < deadline, "the Audience never listened"
+                time.sleep(0.01)
+            yield proc, s, s.makefile("rb")
+    finally:
+        proc.kill()
+        proc.wait()
 
 
 class Client:
@@ -97,7 +126,7 @@ def rig(qtbot):
     view.sink.videoFrameChanged.connect(lambda f: f.isValid() and presented.append(QVideoFrame(f)))
     client = Client(qtbot, view.server.fullServerName())
     hello = client.next()
-    assert hello == p.Hello(last=None, protocol=audience.PROTOCOL)
+    assert hello == p.Hello(last=None, protocol=p.AUDIENCE_CODE)
     yield view, client, presented
     client.socket.disconnectFromServer()
 
@@ -118,21 +147,21 @@ def test_an_unloadable_backend_sends_fatal_and_exits(tmp_path):
     source = (pkg / "audience.py").read_text()
     assert 'REQUIRED_BACKEND = "ffmpeg"' in source
     (pkg / "audience.py").write_text(source.replace('REQUIRED_BACKEND = "ffmpeg"', 'REQUIRED_BACKEND = "nosuch"'))
-    name = socket_path()
-    env = {**os.environ, "PYTHONPATH": str(pkg.parent), "QT_QPA_PLATFORM": "offscreen"}
-    proc = subprocess.Popen([sys.executable, "-P", "-m", "manim_presentations.audience", name, "T"], env=env)
-    try:
-        with socket.socket(socket.AF_UNIX) as s:
-            while s.connect_ex(name) != 0:  # until the Audience listens
-                assert proc.poll() is None, "the Audience exited before listening"
-                time.sleep(0.01)
-            line = s.makefile("rb").readline()
-        assert p.to_presenter(line) == p.Fatal(
+    with audience_process(pkg.parent) as (proc, _, lines):
+        assert p.to_presenter(lines.readline()) == p.Fatal(
             reason="media backend ['libffmpegmediaplugin.dylib'] loaded, libnosuchmediaplugin.dylib required"
         )
-        assert proc.wait(SUBPROCESS_TIMEOUT) == 1
-    finally:
-        proc.kill()
+        assert proc.wait(WAIT_MS / 1000) == 1
+
+
+def test_an_exception_in_the_audience_sends_fatal_and_exits():
+    """Qt prints a slot's exception and keeps going; the Audience must not run on in an unknown state."""
+    with audience_process() as (proc, s, lines):
+        assert isinstance(p.to_presenter(lines.readline()), p.Hello)
+        s.sendall(b'{"type": "nope"}\n')
+        fatal = p.to_presenter(lines.readline())
+        assert isinstance(fatal, p.Fatal) and fatal.reason.startswith("ValidationError")
+        assert proc.wait(WAIT_MS / 1000) == 1
 
 
 def test_play_reports_playing_then_holds_the_last_frame(rig, clips):
@@ -147,7 +176,7 @@ def test_play_reports_playing_then_holds_the_last_frame(rig, clips):
     held = client.next()
     assert isinstance(held, p.NowAt) and held.state == "held" and round(held.pts * FPS) == FRAMES - 1
     assert view.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
-    assert index_of(view.sink.videoFrame()) == FRAMES - 1  # still on screen after the end, not an empty frame
+    assert shows(view.sink.videoFrame()) == ("a", FRAMES - 1)  # still on screen after the end, not an empty frame
 
 
 def test_loop_is_still_playing_after_two_durations(rig, clips, qtbot):
@@ -156,25 +185,59 @@ def test_loop_is_still_playing_after_two_durations(rig, clips, qtbot):
     assert client.next() == p.NowAt(position=at(), clip=str(clips["a"]), state="looping", pts=0.0)
     start = len(presented)
     qtbot.wait(round(2 * FRAMES / FPS * 1000))
-    indices = [index_of(f) for f in presented[start:]]
+    indices = [shows(f)[1] for f in presented[start:]]
     assert view.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
     assert any(b < a for a, b in itertools.pairwise(indices)), indices  # it wrapped to the start
     assert client.got[-1].state == "looping"  # nothing reported since: a loop never holds
 
 
-def test_a_missing_clip_fails_naming_it(rig, tmp_path):
-    _, client, _ = rig
+def test_a_play_after_a_loop_plays_once_and_holds(rig, clips):
+    """Next from a loop beat: the player's infinite loop count must not carry over."""
+    view, client, _ = rig
+    client.send(p.Loop(position=at("x"), clip=str(clips["a"])))
+    assert client.next().state == "looping"
+    client.send(p.Play(position=at(), clip=str(clips["b"])))
+    assert client.next().state == "playing"
+    held = client.next()
+    assert isinstance(held, p.NowAt) and (held.clip, held.state) == (str(clips["b"]), "held")
+    assert shows(view.sink.videoFrame()) == ("b", FRAMES - 1)
+
+
+@pytest.mark.parametrize("again", ["replay", "previous"])
+def test_the_clip_on_screen_can_be_played_again_or_covered(rig, clips, again):
+    """Replay (Play the same clip) and Previous to Before (Cover the same clip): Qt's same-source path."""
+    view, client, presented = rig
+    client.send(p.Play(position=at(), clip=str(clips["a"])))
+    assert client.next().state == "playing" and client.next().state == "held"
+    start = len(presented)
+    if again == "replay":
+        client.send(p.Play(position=at(), clip=str(clips["a"])))
+        assert client.next().state == "playing" and client.next().state == "held"
+        assert next(shows(f) for f in presented[start:]) == ("a", 0)
+        assert shows(view.sink.videoFrame()) == ("a", FRAMES - 1)
+    else:
+        client.send(p.Cover(position=p.Before(), clip=str(clips["a"])))
+        assert client.next() == p.NowCovered(position=p.Before(), clip=str(clips["a"]))
+        assert shows(view.sink.videoFrame()) == ("a", 0)
+        assert view.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
+
+
+def test_a_missing_clip_fails_naming_it_and_keeps_the_picture(rig, clips, tmp_path):
+    view, client, _ = rig
+    client.send(p.Cover(position=p.Before(), clip=str(clips["b"])))
+    client.next()
     gone = str(tmp_path / "gone.mp4")
     client.send(p.Play(position=at(), clip=gone))
     failed = client.next()
     assert isinstance(failed, p.Failed) and (failed.position, failed.clip) == (at(), gone) and failed.reason
+    assert shows(view.sink.videoFrame()) == ("b", 0)  # the audience never sees a black window
 
 
 def test_cover_shows_frame_zero_paused(rig, clips):
     view, client, _ = rig
     client.send(p.Cover(position=p.Before(), clip=str(clips["b"])))
     assert client.next() == p.NowCovered(position=p.Before(), clip=str(clips["b"]))
-    assert index_of(view.sink.videoFrame()) == 0
+    assert shows(view.sink.videoFrame()) == ("b", 0)
     assert view.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
 
 
@@ -187,8 +250,17 @@ def test_hold_shows_only_the_last_frame_paused(rig, clips):
     held = client.next()
     assert isinstance(held, p.NowAt) and (held.clip, held.state) == (str(clips["a"]), "held")
     assert round(held.pts * FPS) == FRAMES - 1
-    assert [index_of(f) for f in presented[start:]] == [FRAMES - 1]  # frame 0 never flashes first
+    assert [shows(f) for f in presented[start:]] == [("a", FRAMES - 1)]  # frame 0 never flashes first
     assert view.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
+
+
+def test_the_window_is_titled_letterboxed_and_sized_for_one_screen(rig):
+    view, _, _ = rig
+    assert view.windowTitle() == "Test talk — Audience View"
+    assert view.video.aspectRatioMode() == Qt.AspectRatioMode.KeepAspectRatio
+    assert view.minimumSizeHint() == QSize(0, 0)  # a large video never stretches the window past a screen
+    assert view.width() == round(audience.NO_SCREEN_WIDTH * view.screen().availableGeometry().width())
+    assert not view.isFullScreen()
 
 
 def test_a_reconnecting_presenter_is_told_what_is_on_screen(rig, clips, qtbot):
@@ -197,13 +269,13 @@ def test_a_reconnecting_presenter_is_told_what_is_on_screen(rig, clips, qtbot):
     now = client.next()
     client.socket.disconnectFromServer()
     again = Client(qtbot, view.server.fullServerName())
-    assert again.next() == p.Hello(last=now, protocol=audience.PROTOCOL)
+    assert again.next() == p.Hello(last=now, protocol=p.AUDIENCE_CODE)
 
 
 def test_a_new_presenter_replaces_the_old_connection(rig, clips, qtbot):
     view, client, _ = rig
     second = Client(qtbot, view.server.fullServerName())
-    assert second.next() == p.Hello(last=None, protocol=audience.PROTOCOL)
+    assert second.next() == p.Hello(last=None, protocol=p.AUDIENCE_CODE)
     qtbot.waitUntil(lambda: client.socket.state() == QLocalSocket.LocalSocketState.UnconnectedState, timeout=WAIT_MS)
     second.send(p.Cover(position=p.Before(), clip=str(clips["a"])))
     assert second.next() == p.NowCovered(position=p.Before(), clip=str(clips["a"]))

@@ -5,10 +5,11 @@ clip it is told, reports what the player actually shows, and echoes the Position
     python -P -m manim_presentations.audience <socket-name> <talk title>"""
 
 import ctypes
-import hashlib
 import os
 import sys
+import traceback
 from pathlib import Path
+from types import TracebackType
 from typing import Literal
 
 os.environ["QT_MEDIA_BACKEND"] = REQUIRED_BACKEND = "ffmpeg"  # P1/P5: darwin presents nothing headless; set first
@@ -23,13 +24,11 @@ from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 from manim_presentations import protocol as p
 
 NO_SCREEN_WIDTH = 0.55  # of the screen when there is no second one: rev 14's guess, confirmed or changed in P6 (D4)
-PROTOCOL = hashlib.sha256(
-    Path(__file__).read_bytes() + (Path(__file__).parent / "protocol.py").read_bytes()
-).hexdigest()  # what this Audience does with each message: a Presenter of another version relaunches it
 
 Shown = p.Play | p.Loop | p.Cover | p.Hold
-# What the next presented frame is reported as, per shown message; "seek" waits for LoadedMedia before Hold's seek.
-Expect = Literal["playing", "looping", "covered", "seek", "held"] | None
+# What the player is awaited to do next for the shown message: present a frame reported as that state, reach
+# LoadedMedia for Hold's seek ("seek"), or reach EndOfMedia after a Play ("end"). Every signal routes on it alone.
+Expect = Literal["playing", "looping", "covered", "seek", "held", "end"] | None
 
 
 def loaded_media_plugins() -> list[str]:
@@ -47,14 +46,12 @@ class Audience(QWidget):
     def __init__(self, socket_name: str, title: str):
         super().__init__()
         self.setWindowTitle(f"{title} — Audience View")
-        self.setMinimumSize(0, 0)  # else a 3456-pixel video stretches the window past the screen
         self.setAutoFillBackground(True)
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Window, Qt.GlobalColor.black)
         self.setPalette(palette)
         self.video = QVideoWidget()
         self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)  # letterboxed in black, never cropped
-        self.video.setMinimumSize(0, 0)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.video)
@@ -70,6 +67,7 @@ class Audience(QWidget):
         self.shown: Shown | None = None
         self.expect: Expect = None
         self.last_valid: QVideoFrame | None = None  # of the shown clip
+        self.on_failure: QVideoFrame | None = None  # the previous clip's last frame, kept up if the shown clip fails
         self.now: p.NowCovered | p.NowAt | None = None
         self.client: QLocalSocket | None = None
         self.buffer = b""
@@ -87,7 +85,7 @@ class Audience(QWidget):
             self.showMaximized()
             return
         width = round(screens[0].availableGeometry().width() * NO_SCREEN_WIDTH)
-        self.resize(width, round(width * 9 / 16))
+        self.resize(width, round(width * 9 / 16))  # 16:9, the usual screen and Zoom share; letterboxing fits any clip
         self.show()
 
     # --- the socket: newline-delimited JSON, one client at a time ---
@@ -95,20 +93,25 @@ class Audience(QWidget):
         """The newest connection replaces any earlier one: the presenter lock allows one Presenter, and a relaunched
         one may connect before its predecessor's close is read here."""
         if self.client is not None:
-            self.client.readyRead.disconnect()
             self.client.abort()
         self.client, self.buffer = self.server.nextPendingConnection(), b""
         self.client.readyRead.connect(self._read)
         if self.fatal is None:
-            self.send(p.Hello(last=self.now, protocol=PROTOCOL))
+            self.send(p.Hello(last=self.now, protocol=p.AUDIENCE_CODE))
             return
-        self.send(p.Fatal(reason=self.fatal))
+        self.send_last(p.Fatal(reason=self.fatal))
         QApplication.exit(1)
 
     def send(self, message: p.ToPresenter) -> None:
         if self.client is not None and self.client.state() == QLocalSocket.LocalSocketState.ConnectedState:
             self.client.write(p.encode(message))
-            self.client.waitForBytesWritten()  # the next line may be the process's last
+            self.client.flush()
+
+    def send_last(self, message: p.ToPresenter) -> None:
+        """For a message the process may exit right after: it waits until the bytes are written."""
+        self.send(message)
+        if self.client is not None:
+            self.client.waitForBytesWritten()
 
     def _read(self) -> None:
         assert self.client is not None
@@ -118,35 +121,39 @@ class Audience(QWidget):
             self.handle(p.to_audience(line))
 
     def handle(self, message: p.ToAudience) -> None:
-        if isinstance(message, p.Quit):
-            QApplication.quit()
-            return
-        self.shown, self.last_valid = message, None
-        self.player.setSource(QUrl.fromLocalFile(message.clip))
         match message:
             case p.Play():
-                self.expect = "playing"
-                self.player.setLoops(1)
+                self.load(message, "playing", 1)
                 self.player.play()
             case p.Loop():
-                self.expect = "looping"
-                self.player.setLoops(QMediaPlayer.Loops.Infinite)
+                self.load(message, "looping", QMediaPlayer.Loops.Infinite)
                 self.player.play()
             case p.Cover():
-                self.expect = "covered"
+                self.load(message, "covered", 1)
                 self.player.pause()  # presents pts 0
             case p.Hold():
-                self.expect = "seek"
+                self.load(message, "seek", 1)
                 self.player.pause()  # a seek before LoadedMedia is discarded (P1)
+            case p.Quit():
+                QApplication.quit()
+
+    def load(self, message: Shown, expect: Expect, loops: int) -> None:
+        """setSource emits the outgoing clip's status and frames synchronously; with nothing expected, they do
+        nothing. The new expectation starts once the new source is set."""
+        if self.last_valid is not None:
+            self.on_failure = self.last_valid
+        self.shown, self.expect, self.last_valid = message, None, None
+        self.player.setLoops(loops)
+        self.player.setSource(QUrl.fromLocalFile(message.clip))
+        self.expect = expect
 
     # --- what the player actually shows ---
     def _status(self, status: QMediaPlayer.MediaStatus) -> None:
-        loaded = status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia)
-        if self.expect == "seek" and loaded:
+        if self.expect == "seek" and status == QMediaPlayer.MediaStatus.LoadedMedia:  # always precedes Buffered
             self.expect = "held"
             # duration - 1 ms lies inside the last frame; P1 measured it presenting exactly that frame, 5/5
             self.player.setPosition(self.player.duration() - 1)
-        elif isinstance(self.shown, p.Play) and status == QMediaPlayer.MediaStatus.EndOfMedia:
+        elif self.expect == "end" and status == QMediaPlayer.MediaStatus.EndOfMedia:
             assert self.last_valid is not None
             self.sink.setVideoFrame(self.last_valid)  # an empty frame precedes EndOfMedia: show the last real one
             self.report("held", self.last_valid)
@@ -160,7 +167,7 @@ class Audience(QWidget):
 
     def report(self, state: Literal["playing", "looping", "covered", "held"], frame: QVideoFrame) -> None:
         assert self.shown is not None
-        self.expect = None
+        self.expect = "end" if state == "playing" else None  # a Play ends held
         match self.shown, state:
             case p.Cover(position=position, clip=clip), "covered":
                 self.now = p.NowCovered(position=position, clip=clip)
@@ -173,10 +180,12 @@ class Audience(QWidget):
     def _error(self, error: QMediaPlayer.Error, reason: str) -> None:
         assert self.shown is not None
         self.expect = None
+        if self.on_failure is not None:
+            self.sink.setVideoFrame(self.on_failure)  # the audience keeps the last picture, never a black window
         self.send(p.Failed(position=self.shown.position, clip=self.shown.clip, reason=reason or error.name))
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        self.send(p.Closed())
+        self.send_last(p.Closed())
         event.accept()
 
 
@@ -203,6 +212,14 @@ def main(argv: list[str]) -> int:
     socket_name, title = argv
     app = QApplication([])
     audience = Audience(socket_name, title)
+
+    def died(kind: type[BaseException], error: BaseException, trace: TracebackType | None) -> None:
+        """Qt prints an exception raised in a slot and carries on; an Audience in an unknown state must stop."""
+        traceback.print_exception(kind, error, trace)
+        audience.send_last(p.Fatal(reason=f"{kind.__name__}: {error}"))
+        os._exit(1)
+
+    sys.excepthook = died
     forwarder = KeyForwarder(audience)
     app.installEventFilter(forwarder)
     if audience.fatal is None:  # a wrong backend shows no window: it waits for the Presenter, sends Fatal, exits 1
