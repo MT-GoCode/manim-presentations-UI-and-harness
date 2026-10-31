@@ -1,0 +1,5 @@
+[render]
+pixel_width = 480
+pixel_height = 270
+frame_rate = 25
+origin = "test speed: the suite's smallest 16:9 size; 25 fps, not Manim's default 30, so an export that ignores the deck's rate is caught"

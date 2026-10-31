@@ -26,9 +26,15 @@ SUBPROCESS_TIMEOUT = 600  # s: a hung build fails its test instead of hanging th
 MiB = 2**20
 # Measured process-tree peaks (cores, bytes) of each level's heaviest test (`/usr/bin/time -l`, mac-work-2): unit, the
 # whole in-process unit run; qt, the whole Audience run in one process (1.77 CPU-s over 6.8 s, 299 MiB); e2e, one
-# setup.sh run on a repo copy. Every xdist slot is sized for the heaviest, so
+# setup.sh run on a repo copy; export, the frames fixture built and exported, then headless Chrome through two player
+# tests (peak of the process tree's summed RSS, CPU seconds over wall time; psutil every 50 ms). Every xdist slot is sized for the heaviest, so
 # slots never oversubscribe (a stated trade: a light test holds a heavy slot).
-TEST_COST = {"unit": (0.5, 213 * MiB), "qt": (0.26, 299 * MiB), "e2e": (1.05, 245 * MiB)}
+TEST_COST = {
+    "unit": (0.5, 213 * MiB),
+    "qt": (0.26, 299 * MiB),
+    "e2e": (1.05, 245 * MiB),
+    "export": (0.54, 1345 * MiB),
+}
 BUILD_PARENT_RSS = 191 * MiB  # the build parent's peak RSS (mac-work-2, `/usr/bin/time -l`)
 PASS1_RSS_TEST = 138 * MiB  # the edge fixture's largest pass1_rss at 480×270 (index.json, mac-personal)
 

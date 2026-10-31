@@ -75,6 +75,41 @@ def run_present(root: Path, args: argparse.Namespace) -> int:
         return 1
 
 
+def even(text: str) -> int:
+    n = positive(text)
+    if n % 2:
+        raise argparse.ArgumentTypeError(f"{n}: H.264 yuv420p needs an even height")
+    return n
+
+
+def crf(text: str) -> int:
+    n = int(text)
+    if not 0 <= n <= 51:
+        raise argparse.ArgumentTypeError(f"{n}: x264 takes 0-51")
+    return n
+
+
+def html_out(text: str) -> Path:
+    out = Path(text).expanduser().resolve()
+    if not out.parent.is_dir():
+        raise argparse.ArgumentTypeError(f"{out.parent}: no such folder")
+    if out.is_dir():
+        raise argparse.ArgumentTypeError(f"{out} is a folder; name the .html file to write")
+    return out
+
+
+def run_export(root: Path, args: argparse.Namespace) -> int:
+    from manim_presentations.deck import IncompatibleBuild, Stale
+    from manim_presentations.export import ExportError, export
+    from manim_presentations.headroom import TooBig
+
+    try:
+        return export(root, args.out, args.height, args.crf, args.transcript, args.workers)
+    except (IncompatibleBuild, Stale, ExportError, TooBig) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mpres", description="Build, present, screenshot and export Manim talks.")
     sub = p.add_subparsers(dest="command", metavar="command")
@@ -92,6 +127,27 @@ def parser() -> argparse.ArgumentParser:
     pr.add_argument("talk", help="path to a <name>.manim-presentation folder")
     pr.add_argument("--from", dest="start", metavar="BEAT", help="start just before this beat (its slug)")
     pr.set_defaults(run=run_present)
+    e = sub.add_parser("export", help="the talk as one self-contained HTML file that plays offline")
+    e.add_argument("talk", help="path to a <name>.manim-presentation folder")
+    e.add_argument("--out", required=True, type=html_out, metavar="FILE.html", help="where to write the page")
+    e.add_argument(
+        "--height",
+        type=even,
+        metavar="H",
+        help="video height, even (default: the measured web height or the source height, whichever is lower; printed)",
+    )
+    e.add_argument(
+        "--crf", type=crf, metavar="C", help="x264 quality, 0-51, lower is better (default: measured, printed)"
+    )
+    e.add_argument(
+        "--transcript",
+        choices=("none", "narration", "full"),
+        default="none",
+        help="none: titles only, no narration or notes; narration: plus what is spoken; full: plus the private > notes "
+        "(default: none)",
+    )
+    e.add_argument("--workers", type=positive, metavar="N", help=workers)
+    e.set_defaults(run=run_export)
     return p
 
 
