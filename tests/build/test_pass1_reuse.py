@@ -177,4 +177,4 @@ def test_a_chapter_may_not_start_other_programs(prebuilt):
     root = prebuilt("edge")
     branch_on('__import__("subprocess").run(["/bin/echo", "hi"]).returncode == 0')(root)
     r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
-    assert r.returncode == 1 and "a talk may not start other programs; it started /bin/echo" in r.stdout + r.stderr
+    assert r.returncode == 1 and "chapters/sizes.py started /bin/echo; a talk may not start other programs" in r.stderr

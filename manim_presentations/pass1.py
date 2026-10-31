@@ -53,7 +53,7 @@ class ReadGuard:
         # tempfile opens its directory itself (O_RDWR | O_CREAT on a directory: no file bytes); nothing inside it
         self.tempdir = realpath(tempfile.gettempdir())
         self.active = False
-        self.violations: list[str] = []
+        self.violations: list[str] = []  # what the chapter did, ending its error line
         self.cache_entries: set[str] = set()
         self.inputs: set[str] = set()  # snapshot-relative: files opened or stat'ed, and folders listed (as "dir/")
         self.quiet = threading.local()  # per thread: the guard's own stats (in realpath) are not the chapter's
@@ -86,7 +86,9 @@ class ReadGuard:
                 return
         roots = self.roots + (self.listing_roots if event != "open" else ())
         if not (event == "open" and p == self.tempdir) and not any(p == r or p.startswith(r + os.sep) for r in roots):
-            self.violations.append(p)
+            self.violations.append(
+                f"read {p}, outside the talk folder; copy it into assets/ and read it through talk.root"
+            )
             raise PermissionError(f"a talk reads only files inside its own folder; {p} is outside it")
 
     def note(self, p: str, listed: bool) -> None:
@@ -107,7 +109,7 @@ class ReadGuard:
         found = shutil.which(os.fsdecode(command)) or os.fsdecode(command)
         program = self.own(found)
         if not program.startswith(self.tinytex + os.sep):
-            self.violations.append(program)
+            self.violations.append(f"started {program}; a talk may not start other programs")
             raise PermissionError(f"a talk may not start other programs; it started {program}")
 
     def stat(self, real: Any) -> Any:
@@ -166,10 +168,7 @@ def main(argv: list[str]) -> int:
         guard.active = False
     if guard.violations:  # whether or not talk code caught the PermissionError
         for v in dict.fromkeys(guard.violations):
-            print(
-                f"error: {where} read {v}, outside the talk folder; copy it into assets/ and read it through talk.root",
-                file=sys.stderr,
-            )
+            print(f"error: {where} {v}", file=sys.stderr)
         return 1
     if isinstance(failure, TalkError):
         print(f"error: {failure}", file=sys.stderr)
