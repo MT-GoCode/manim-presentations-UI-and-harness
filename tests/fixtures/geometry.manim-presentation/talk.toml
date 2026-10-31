@@ -1,0 +1,5 @@
+[render]
+pixel_width = 2160
+pixel_height = 1080
+frame_width = 16
+origin = "Explainers' geometry fixture: its expected moves were hand-checked at 2160 px across a 16-unit frame"

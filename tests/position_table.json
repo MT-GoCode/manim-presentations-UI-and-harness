@@ -1,0 +1,20 @@
+{
+  "slugs": ["a", "b", "c"],
+  "steps": [
+    {"from": {"kind": "before"}, "action": "next", "to": {"kind": "at", "slug": "a"}},
+    {"from": {"kind": "before"}, "action": "previous", "to": "boundary"},
+    {"from": {"kind": "before"}, "action": "replay", "to": "boundary"},
+    {"from": {"kind": "at", "slug": "a"}, "action": "next", "to": {"kind": "at", "slug": "b"}},
+    {"from": {"kind": "at", "slug": "a"}, "action": "previous", "to": {"kind": "before"}},
+    {"from": {"kind": "at", "slug": "a"}, "action": "replay", "to": {"kind": "at", "slug": "a"}},
+    {"from": {"kind": "at", "slug": "b"}, "action": "previous", "to": {"kind": "at", "slug": "a"}},
+    {"from": {"kind": "at", "slug": "b"}, "action": "replay", "to": {"kind": "at", "slug": "b"}},
+    {"from": {"kind": "at", "slug": "c"}, "action": "next", "to": "boundary"},
+    {"from": {"kind": "at", "slug": "c"}, "action": "previous", "to": {"kind": "at", "slug": "b"}}
+  ],
+  "from_flag": [
+    {"slug": "a", "to": {"kind": "before"}},
+    {"slug": "b", "to": {"kind": "at", "slug": "a"}},
+    {"slug": "c", "to": {"kind": "at", "slug": "b"}}
+  ]
+}

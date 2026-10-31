@@ -1,0 +1,100 @@
+[project]
+name = "manim-presentations"
+version = "0.1.0"
+description = "Manim talks with a Presenter View and an Audience View: incremental, verified, parallel builds."
+license = "MIT"
+requires-python = "==3.12.*"  # Explainers' frame recorder, vendored here, ships on 3.12
+dependencies = [
+    "manim==0.22.0",  # exact: clip.py and manim_hooks.py touch Manim internals (README: Manim touches)
+    "pillow<13",  # manim 0.22 draws images with Image.fromarray(..., mode=), which Pillow 13 removed
+    "PySide6-Essentials~=6.12.0",  # Essentials + Addons (QtMultimedia), not PySide6 with its 1.2 GB WebEngine
+    "PySide6-Addons~=6.12.0",
+    "pydantic>=2.9,<3",
+    "av",
+    "markdown-it-py",
+    "psutil",  # available RAM and per-CPU idle time on macOS
+]
+
+[project.scripts]
+mpres = "manim_presentations.cli:main"
+
+[dependency-groups]
+dev = ["pytest", "pytest-xdist", "pytest-qt", "playwright", "ruff", "pyright", "import-linter"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["manim_presentations"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["tests/fixtures"]  # talks written the way users write them, including deliberate mistakes
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["B010"]  # setattr tags Manim objects with private marks without type: ignore
+allowed-confusables = ["×", "·", "–", "—", "→"]  # used deliberately in messages (3456×2168, a·b)
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["RUF001", "RUF043", "E501"]  # literal Unicode separators, plain-text match= patterns, exact messages
+
+[tool.pyright]
+include = ["manim_presentations"]
+# Strict where this package owns every type; standard where values come from untyped libraries (Manim,
+# manimpango, numpy arrays).
+typeCheckingMode = "standard"
+strict = [
+    "manim_presentations/cli.py", "manim_presentations/script.py", "manim_presentations/settings.py",
+    "manim_presentations/records.py", "manim_presentations/protocol.py", "manim_presentations/headroom.py",
+    "manim_presentations/deck.py",
+]
+reportMatchNotExhaustive = true
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+addopts = "-n auto --junitxml=test-results/junit.xml"
+testpaths = ["tests"]
+markers = [
+    "unit: in-process, no subprocess builds",
+    "build: runs mpres build subprocesses",
+    "qt: Qt windows and media, offscreen",
+    "export: HTML export in headless browsers",
+    "e2e: whole user paths",
+]
+
+[tool.importlinter]
+root_package = "manim_presentations"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "data spine imports no rendering or media library"
+type = "forbidden"
+source_modules = ["manim_presentations.script", "manim_presentations.settings", "manim_presentations.records", "manim_presentations.protocol", "manim_presentations.headroom"]
+forbidden_modules = ["manim", "av", "cairo", "PySide6"]
+
+[[tool.importlinter.contracts]]
+name = "protocol and records are leaves"
+type = "forbidden"
+source_modules = ["manim_presentations.protocol", "manim_presentations.records"]
+forbidden_modules = ["manim_presentations.script", "manim_presentations.settings", "manim_presentations.headroom", "manim_presentations.cli"]
+
+[[tool.importlinter.contracts]]
+name = "the scene side never imports the deck, the script parser or the wire"
+type = "forbidden"
+source_modules = ["manim_presentations.talk", "manim_presentations.pass1"]
+forbidden_modules = ["manim_presentations.deck", "manim_presentations.script", "manim_presentations.protocol", "manim_presentations.build", "manim_presentations.cli"]
+
+[[tool.importlinter.contracts]]
+name = "the build parent runs no scene code"
+type = "forbidden"
+source_modules = ["manim_presentations.build"]
+forbidden_modules = ["manim_presentations.pass1", "manim_presentations.talk", "manim_presentations.manim_hooks"]
+
+[[tool.importlinter.contracts]]
+name = "deck and geometry are pure: no rendering library"
+type = "forbidden"
+source_modules = ["manim_presentations.deck", "manim_presentations.geometry"]
+forbidden_modules = ["manim", "av", "cairo", "PySide6"]

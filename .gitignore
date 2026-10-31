@@ -1,0 +1,5 @@
+.venv/
+.tinytex/
+__pycache__/
+test-results/
+*.manim-presentation/build/

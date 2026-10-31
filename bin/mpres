@@ -1,0 +1,3 @@
+#!/bin/sh
+# mpres from this checkout (setup.sh links it into ~/.local/bin); a copy of the repo runs its own code.
+exec uv run -q --project "$(cd "$(dirname "$(realpath "$0")")/.." && pwd)" mpres "$@"
