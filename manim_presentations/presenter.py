@@ -65,6 +65,18 @@ EDITOR_FLOOR_PT = 16  # P1(e): the smallest editor text legible at presenter dis
 FLASH_MS = 150  # a pressed button stays lit this long: long enough to see, shorter than a fast double press
 CONNECT_RETRY_MS = 50  # polling a launched Audience's socket: invisible against its ~1 s start (PySide import)
 ACCENT = "#3d7eff"
+# Full black (Minh): the presenter's own screen stays dark beside the shared Audience View.
+DARK = f"""
+    QWidget {{ background: #000000; color: #ffffff; }}
+    QTreeWidget, QTextEdit {{ border: 1px solid #262626; }}
+    QTreeWidget::item:selected {{ background: {ACCENT}; color: #ffffff; }}
+    QTextEdit:focus {{ border: 2px solid {ACCENT}; }}
+    QPushButton {{ background: #141414; border: 1px solid #333333; border-radius: 6px; }}
+    QPushButton:pressed {{ background: #333333; }}
+    QScrollBar {{ background: #000000; }}
+    QScrollBar::handle {{ background: #333333; }}
+    QSplitter::handle {{ background: #1a1a1a; }}
+"""
 LOCK_RETRY_S = 1.0  # §3.7: GC's liveness probe holds the presenter lock for microseconds; 1 s is imperceptible
 PARENT_WATCH_MS = 1000  # the parent-death watch's interval, as the scene processes' (talk.watch_parent)
 TEXT_EDIT_KEYS = ("Up", "Down", "R")  # typed while the editor has focus; PageUp/PageDown always navigate
@@ -361,7 +373,6 @@ class Presenter(QMainWindow):
         self.editor = QTextEdit()
         self.editor.setAcceptRichText(False)
         self.editor.setWordWrapMode(QTextOption.WrapMode.WordWrap)  # never inside a word
-        self.editor.setStyleSheet(f"QTextEdit:focus {{ border: 2px solid {ACCENT}; }}")  # the visible editing state
         self.notes = Notes(self.editor.document())
         self.editor.textChanged.connect(self.save)
         # Refit after the edit completes: changing the document's font inside textChanged aborts Qt mid-insert.
@@ -405,6 +416,7 @@ class Presenter(QMainWindow):
         }
         for action, button in self.buttons.items():
             button.setStyleSheet(self.flash_base[action])
+        self.setStyleSheet(DARK)  # the editor's accent border on focus is its visible editing state
 
     def fill_timeline(self) -> None:
         self.timeline.clear()
