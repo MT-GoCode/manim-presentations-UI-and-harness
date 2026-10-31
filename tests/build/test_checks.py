@@ -40,7 +40,7 @@ def test_edge_and_hello_build_clean(talk):
         ("mismatch", r'error: script\.md:\d+ has "## named-as" but chapters/mismatch\.py has no talk\.beat/loop'),
         ("early-play", r"error: chapters/early-play\.py:5: play or wait before the chapter's first talk\.beat"),
         ("empty-beat", r'error: chapters/empty-beat\.py:5 beat "only-adds" has no animation'),
-        ("empty-loop", r'error: chapters/empty-loop\.py:5 beat "idle" has no animation; give it one'),
+        ("empty-loop", r'error: chapters/empty-loop\.py:5 loop "idle" has no animation; give it one'),
         ("unnamed", r"error: chapters/stray\.py is not named by any `# stray` in script\.md"),
         ("reads-outside", r"error: chapters/reads-outside\.py read /private/tmp/x, outside the talk folder"),
         # the talk's fourth chapter: a beat's index for transient marks is its index in its own chapter
@@ -88,14 +88,15 @@ def test_edge_and_hello_build_clean(talk):
         ),
         (
             "size-mismatch",
-            r"error: morph · chapters/size-mismatch\.py:6 · Text at \(.+\) was transformed between groups of "
-            r"unequal numbers of text objects; use ReplacementTransform\(a, b\)",
+            r"error: morph · chapters/size-mismatch\.py:6 · Text at \(.+\) was transformed between text and a "
+            r"shape \(Manim pairs the two groups node by node\); use ReplacementTransform\(a, b\)",
         ),
         (
             "shape-to-text",
-            r"error: sprouts · chapters/shape-to-text\.py:6 · Square at \(.+\) was transformed between groups of "
-            r"unequal numbers of text objects",
+            r"error: sprouts · chapters/shape-to-text\.py:6 · Square at \(.+\) was transformed between text and",
         ),
+        # one Text on each side, in swapped places: its 8-pt glyphs land in the Square
+        ("swap", r"error: trade · chapters/swap\.py:6 · Square at \(.+\) was transformed between text and"),
         (
             "unclosed",
             r'error: chapters/unclosed\.py:5 loop "drifts" does not close: its end state differs from its first frame in \d+ pixels',
@@ -111,7 +112,7 @@ def test_each_authoring_error_is_named_at_its_line(talk, overlay, expected):
 
 @pytest.mark.parametrize(
     "overlay,counts",
-    [("overlap", "overlap 1"), ("size-mismatch", "size-mismatch 2"), ("empty-loop", "empty-beat 1")],
+    [("overlap", "overlap 1"), ("swap", "size-mismatch 2"), ("empty-loop", "empty-beat 1")],
 )
 def test_failure_counts_per_kind(talk, overlay, counts):
     r = build(talk("edge", overlay))

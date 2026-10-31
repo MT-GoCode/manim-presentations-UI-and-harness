@@ -397,11 +397,47 @@ def test_text_transformed_into_a_non_text_slot_is_marked(size_hooks):
     def run(s):
         two = VGroup(Text("a", font_size=40), Text("b", font_size=40))
         s.add(two)
-        s.play(Transform(two, VGroup(Text("x", font_size=40), Square(0.3))))  # text where the target has none
+        s.play(Transform(two, VGroup(Text("x", font_size=36), Square(0.3))))  # text where the target has none
         return two
 
     a, b = played(run)
-    assert manim_hooks.mismatched(a) and manim_hooks.mismatched(b)
+    assert not manim_hooks.mismatched(a) and manim_hooks.font_size(a) == pytest.approx(36)
+    assert manim_hooks.mismatched(b)
+
+
+def swapped():
+    from manim import Text, VGroup
+
+    return VGroup(Text("a", font_size=40), Square(0.5)), VGroup(Square(0.5), Text("tiny", font_size=8))
+
+
+def test_text_and_a_shape_that_swap_places_are_both_marked(size_hooks):
+    from manim import Transform
+
+    def run(s):
+        g, target = swapped()
+        s.add(g)
+        s.play(Transform(g, target))  # one Text on each side: equal counts, Manim pairs by family index
+        return g
+
+    text, square = played(run)
+    assert manim_hooks.mismatched(text) and manim_hooks.mismatched(square)
+
+
+@pytest.mark.parametrize("keywords", [{}, {"match_height": True}])
+def test_become_pairs_as_manim_does(size_hooks, keywords):
+    g, target = swapped()
+    g.become(target, **keywords)
+    text, square = g
+    assert manim_hooks.mismatched(text) and manim_hooks.mismatched(square)
+
+
+def test_become_with_a_keyword_leaves_its_argument_as_it_was(size_hooks):
+    """Manim aligns a private copy then, so the hook must not align the argument itself."""
+    g, target = swapped()
+    family = [id(x) for x in target.get_family()]
+    g.become(target, match_height=True)
+    assert [id(x) for x in target.get_family()] == family
 
 
 def test_a_later_matching_transform_clears_a_mismatch(size_hooks):

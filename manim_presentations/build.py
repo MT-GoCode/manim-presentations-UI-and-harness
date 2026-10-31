@@ -419,7 +419,7 @@ def build(talk: Path, workers: int | None) -> int:
         findings += [
             Finding(
                 "empty-beat",
-                f'{r.file}:{b.line} beat "{b.slug}" has no animation; give it one (talk.wait() holds the frame)',
+                f'{r.file}:{b.line} {b.call} "{b.slug}" has no animation; give it one (talk.wait() holds the frame)',
             )
             for b in r.beats
             if not b.animations

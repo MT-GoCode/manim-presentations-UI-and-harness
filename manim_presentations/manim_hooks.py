@@ -168,7 +168,8 @@ def sized(m: Mobject) -> bool:
 
 
 class Mismatch:
-    """A node's size reference after a Transform or become between unequal numbers of text objects: unknown."""
+    """A node's size reference after a Transform or become paired it with a node of the other kind (size-checked or
+    not): unknown."""
 
 
 Ref = tuple[float, float] | Mismatch
@@ -200,9 +201,9 @@ def font_size(m: Mobject) -> float:
 def install_size_references() -> None:
     """Pass 1 only. Record Paragraph's reference at creation; after a Transform, whose source ends holding the
     target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction, ReplacementTransform), and
-    after become, give each size-checked node of the source the matching target node's reference, paired by family
-    index. A count mismatch marks every node of the source (a Square ending with a Text's glyphs is not size-checked)
-    for the check to report."""
+    after become, give each node of the source the reference of the target node whose points it took: Manim's own
+    pairing, by index over the two aligned families. A size-checked node paired with one that is not (a Text that now
+    draws a square, a Square that now draws glyphs) is marked for the check to report."""
     from manim import Paragraph, Transform
 
     paragraph_init = Paragraph.__init__
@@ -211,29 +212,39 @@ def install_size_references() -> None:
         paragraph_init(self, *a, **k)
         setattr(self, "_mpres_paragraph_ref", (self.height, self.lines_text.font_size))
 
-    def take(source: Mobject, target: Mobject) -> None:
-        family = source.get_family()
-        mine = [x for x in family if sized(x)]
-        theirs = [size_ref(t) for t in target.get_family() if sized(t)]  # read first: source and target may share
-        matched = len(mine) == len(theirs)
-        refs = dict(zip(map(id, mine), theirs, strict=True)) if matched else {}
-        # Every node's one fact is rewritten, so the latest take wins. On a mismatch a shape is marked too: it may now
-        # hold a Text's glyphs.
-        for x in family:
-            setattr(x, "_mpres_ref", refs.get(id(x)) if matched else Mismatch())
+    def ref(x: Mobject, t: Mobject) -> Ref | None:
+        return Mismatch() if sized(x) != sized(t) else size_ref(t) if sized(t) else None
+
+    def take(source: Mobject, aligned_target: Mobject) -> None:
+        """Every node's one fact is rewritten, so the latest take wins."""
+        pairs = list(zip(source.get_family(), aligned_target.get_family(), strict=True))
+        refs = [ref(x, t) for x, t in pairs]  # read first: source and target may share nodes
+        for (x, _), r in zip(pairs, refs, strict=True):
+            setattr(x, "_mpres_ref", r)
 
     clean_up = Transform.clean_up_from_scene
 
     def shadowing_clean_up(self: Any, scene: Any) -> None:
         clean_up(self, scene)
-        take(self.mobject, self.target_mobject)  # off screen too: a replaced source shown again holds the target
+        take(self.mobject, self.target_copy)  # off screen too: a replaced source shown again holds the target
+
+    def align_structure(a: Mobject, b: Mobject) -> None:
+        """align_data's family alignment without its point alignment, which would rewrite a's points."""
+        a.null_point_align(b)
+        a.align_submobjects(b)
+        for x, y in zip(a.submobjects, b.submobjects, strict=True):
+            align_structure(x, y)
 
     become = Mobject.become
 
     def shadowing_become(self: Mobject, mobject: Mobject, *a: Any, **k: Any) -> Mobject:
-        refs_source = mobject
+        # With no keyword, become aligns `mobject` itself, so it already pairs with self. With one, become aligns a
+        # private copy: align our own copy the same way (keywords only move points, never the family structure).
+        # The copy costs ~35× a bare become (6 ms for a line of Text), so it is made only when needed.
+        target = mobject.copy() if a or k else mobject
         out = become(self, mobject, *a, **k)
-        take(self, refs_source)
+        align_structure(self, target)
+        take(self, target)
         return out
 
     setattr(Paragraph, "__init__", recording_paragraph)

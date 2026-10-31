@@ -175,8 +175,8 @@ def check(beats: Sequence[BeatRecord], settings: Settings) -> list[Finding]:
                 errs.append(
                     Finding(
                         "size-mismatch",
-                        f"{beat.slug} · {u.file}:{u.line} · {nu} was transformed between "
-                        "groups of unequal numbers of text objects; use ReplacementTransform(a, b)",
+                        f"{beat.slug} · {u.file}:{u.line} · {nu} was transformed between text and a "
+                        "shape (Manim pairs the two groups node by node); use ReplacementTransform(a, b)",
                     )
                 )
             if u.transient_beat == n:
