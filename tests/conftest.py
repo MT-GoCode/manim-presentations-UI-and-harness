@@ -31,7 +31,8 @@ TEST_COST = {
     "unit": (0.5, 213 * MiB),
     "build": (1.1, 911 * MiB),
     "e2e": (1.05, 245 * MiB),
-    # export: the frames fixture built and exported, then headless Chrome through two player tests (psutil tree sum)
+    # export: the frames fixture built and exported, then headless Chrome through two player tests; peak of the
+    # process tree's summed RSS and its CPU seconds over wall time (psutil, sampled every 50 ms)
     "export": (0.54, 1345 * MiB),
 }
 

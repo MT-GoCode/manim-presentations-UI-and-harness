@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from conftest import SUBPROCESS_TIMEOUT, TEST_WORKERS, mpres
-from frames import clips, decoded, manifest, run
+from frames import NARRATION, NOTES, clips, decoded, everywhere, manifest, run
 
 import manim_presentations
 
@@ -47,6 +47,9 @@ def test_every_frame_of_every_beat_is_the_builds_frame_at_the_asked_size(frames_
         assert (
             manifest(html)["beats"][1]["title"] == "Beat B </script> ends no script"
         )  # escaped, not closing the block
+        assert "<title>Frame codes &lt;&amp;&gt;</title>" in html
+        assert manifest(html)["transcript"] == "none"  # the default: no script text anywhere
+        assert not any(line in everywhere(html) for line in NARRATION + NOTES)
         for i, (clip, beat) in enumerate(zip(clips(html), beats, strict=True), 1):
             facts, codes = decoded(clip)
             assert facts == (w, h, index(frames_talk)["render"]["fps"])

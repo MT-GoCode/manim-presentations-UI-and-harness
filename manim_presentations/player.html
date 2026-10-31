@@ -6,14 +6,14 @@
   body { display: flex; flex-direction: column; }
   #main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   #stage { position: relative; flex: 1; min-height: 0; min-width: 0; }
-  #transcript { height: 38%; overflow-y: auto; padding: 0 16px; background: #0d0d0d; border-left: 1px solid #222; }
+  #transcript { height: 38%; overflow-y: auto; padding: 0 16px; background: #0d0d0d; border-top: 1px solid #222; }
   #transcript h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #888; margin: 18px 0 6px; }
   #transcript section { padding: 8px 10px; margin: 0 -10px; border-radius: 6px; cursor: pointer; }
   #transcript section.current { background: #1d2f57; }
   #transcript h3 { font-size: 15px; margin: 0 0 4px; color: #fff; }
   #transcript p { margin: 0 0 4px; white-space: pre-wrap; }
   #transcript p.note { color: #c9a227; font-style: italic; }
-  @media (min-aspect-ratio: 1/1) { #main { flex-direction: row; } #transcript { width: 32%; height: auto; } }  /* last: it overrides the portrait sizes above */
+  @media (min-aspect-ratio: 1/1) { #main { flex-direction: row; } #transcript { width: 32%; height: auto; border-top: 0; border-left: 1px solid #222; } }  /* last: it overrides the portrait sizes above */
   #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   #bar { display: flex; gap: 8px; align-items: center; padding: 8px; background: #111; }
   #bar button { font: inherit; padding: 6px 14px; border: 1px solid #444; border-radius: 6px; background: #222; color: #eee; }
@@ -91,8 +91,8 @@ function show({beat, frame, play}) {
     v.style.zIndex = 1;
     if (front) release(front);
     front = v;
-    windowAt(beat);
     if (play) v.play().catch((e) => { if (e.name !== "AbortError") throw e; });  // AbortError: a newer show paused it
+    windowAt(beat);  // after play(): a neighbour's decode never delays the start
   }, {once: true});
   v.addEventListener("error", () => {
     if (mine !== shows) return release(v);
@@ -158,7 +158,7 @@ for (const [slug, title] of M.chapters) {
 jump.addEventListener("change", () => act("jump", {kind: "at", slug: jump.value}));
 for (const id of ["previous", "next", "replay"]) document.getElementById(id).addEventListener("click", () => act(id));
 document.addEventListener("keydown", (e) => {
-  const action = M.keys[e.key];
+  const action = !(e.metaKey || e.ctrlKey || e.altKey) && M.keys[e.key];  // Cmd/Ctrl+R stay the browser's reload
   if (!action) return;
   e.preventDefault();  // a focused jump list never also moves its own selection
   if (!e.repeat) act(action);  // a held key or a repeating clicker advances once

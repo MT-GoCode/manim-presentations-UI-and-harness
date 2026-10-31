@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from conftest import TEST_WORKERS, mpres
-from frames import FRAMES, PAGE_JS, Player
+from frames import FRAMES, PAGE_JS, Player, manifest
 from playwright.sync_api import sync_playwright
 
 
@@ -110,3 +110,10 @@ def open_player(browser, exported):
 @pytest.fixture
 def player(open_player) -> Player:
     return open_player()
+
+
+@pytest.fixture
+def frames(exported):
+    beats = manifest(exported("none").read_text())["beats"]
+    assert [b["kind"] for b in beats] == ["beat", "beat", "loop", "beat"]
+    return [b["frames"] for b in beats]

@@ -6,20 +6,11 @@ import itertools
 import json
 import re
 
-import pytest
 from conftest import REPO, TESTS
-from frames import manifest
 
 pytest_plugins = ["frames_plugin"]  # the built, exported frames talk and the browsers
 
 LOOP = 2
-
-
-@pytest.fixture
-def frames(exported):
-    beats = manifest(exported("none").read_text())["beats"]
-    assert [b["kind"] for b in beats] == ["beat", "beat", "loop", "beat"]
-    return [b["frames"] for b in beats]
 
 
 def press(player, key):
@@ -63,7 +54,7 @@ def test_a_boundary_flashes_and_changes_nothing(player):
 def test_a_played_beat_ends_on_its_last_frame_and_a_loop_keeps_looping(player, frames):
     player.transition(press(player, "ArrowDown"), 0, 0, 0)
     player.page.wait_for_function("() => T.top().ended")
-    assert player.front() == (0, frames[0] - 1)
+    player.settle(0, frames[0] - 1)  # at `ended`, a slow WebKit may not have drawn the last frame yet; it then does
     for beat in (1, 2):
         player.transition(press(player, "ArrowDown"), beat - 1, beat, 0)
     seen = player.page.evaluate(  # every frame code shown over 2.75× the loop's length (0.8 s)
@@ -102,13 +93,17 @@ def test_blob_urls_exist_for_the_current_beat_and_its_neighbours_only(player, fr
 
     assert player.page.evaluate("T.liveBeats()") == [0, 1]  # Before: beat 0 and its neighbour
     old = 0
-    for press_it, beat, frame in [(press(player, "ArrowDown"), b, 0) for b in range(4)] + [
-        (lambda: player.page.select_option("#jump", "a"), 0, frames[0] - 1)
-    ]:
+    steps = [(press(player, "ArrowDown"), b, 0, True) for b in range(4)]
+    steps.append((lambda: player.page.select_option("#jump", "a"), 0, frames[0] - 1, False))
+    for act, beat, frame, plays in steps:
         player.page.evaluate("T.made = []")
-        player.transition(press_it, old, beat, frame)
+        player.transition(act, old, beat, frame)
         assert player.page.evaluate("T.liveBeats()") == window(beat), beat
-        assert set(player.page.evaluate("T.madeBeats()")) <= set(window(beat)), beat  # none made outside, even briefly
+        made = player.page.evaluate("T.madeLog()")
+        # Before the swap only the shown beat's Blob is made; after it, play() comes before any neighbour's decode.
+        assert [b for b, early in made if early] in ([], [beat]), made
+        late = [b for b, early in made if not early]
+        assert set(late) - {"play"} <= set(window(beat)) and (late[:1] == ["play"]) == plays, made
         old = beat
 
 
@@ -127,6 +122,18 @@ def test_a_clip_that_fails_to_load_says_so_and_the_last_frame_stays(open_player,
     p.errors.clear()
 
 
+def test_a_broken_clip_passed_over_by_fast_presses_is_never_reported(open_player, exported, tmp_path):
+    html = exported("none").read_text()
+    (tmp_path / "broken.html").write_text(re.sub(r'(id="clip-1">)[^<]*', r"\1AAAAAAAA", html))
+    p = open_player(file=tmp_path / "broken.html")
+    p.page.evaluate(
+        "for (let i = 0; i < 3; i++) document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowDown'}))"
+    )
+    p.settle(2)
+    p.page.wait_for_function("() => document.querySelectorAll('#stage video').length === 1")
+    assert not p.page.evaluate("document.body.classList.contains('failed')") and p.errors == []
+
+
 def test_buttons_and_clicker_keys_act_like_the_arrows_and_auto_repeat_does_nothing(player, frames):
     player.transition(lambda: player.page.click("#next"), 0, 0, 0)
     player.transition(press(player, "PageDown"), 0, 1, 0)
@@ -134,6 +141,10 @@ def test_buttons_and_clicker_keys_act_like_the_arrows_and_auto_repeat_does_nothi
     player.transition(lambda: player.page.click("#replay"), 0, 0, 0)
     player.transition(press(player, "Shift+KeyR"), 0, 0, 0)  # Qt's Key_R is R with or without Shift
     player.transition(lambda: player.page.click("#previous"), 0, 0, 0)  # Before
-    held = "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowDown', repeat: true}))"
-    assert player.page.evaluate(f"() => {{ {held}; return document.querySelectorAll('#stage video').length; }}") == 1
+    for held in ("{key: 'ArrowDown', repeat: true}", "{key: 'ArrowDown', metaKey: true}", "{key: 'r', ctrlKey: true}"):
+        pressed = f"document.dispatchEvent(new KeyboardEvent('keydown', {held}))"  # a held key; the browser's shortcuts
+        assert (
+            player.page.evaluate(f"() => {{ {pressed}; return document.querySelectorAll('#stage video').length; }}")
+            == 1
+        )
     assert player.front() == (0, 0)

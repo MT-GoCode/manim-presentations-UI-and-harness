@@ -95,7 +95,8 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
             clips = [tmp / f"{i}.mp4" for i in range(len(deck.beats))]
             with ProcessPoolExecutor(n, mp_context=multiprocessing.get_context("spawn")) as pool:  # no forked locks
                 job = functools.partial(encode, width=w, height=h, crf=crf, fps=r.fps)
-                list(pool.map(job, [b.clip for b in deck.beats], clips))
+                for k, _ in enumerate(pool.map(job, [b.clip for b in deck.beats], clips), 1):
+                    say(f"encoded {k}/{len(clips)}")
         manifest = {
             "title": talk.title,
             "fps": r.fps,

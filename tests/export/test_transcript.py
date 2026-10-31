@@ -2,22 +2,9 @@
 the position, a click jumps, a toggle hides it, and it sits beside the video on a wide window and below it on a tall
 one."""
 
-import base64
-import re
-
-from frames import manifest
+from frames import NARRATION, NOTES, everywhere, manifest
 
 pytest_plugins = ["frames_plugin"]  # the built, exported frames talk and the browsers
-
-# The frames talk's script.md, verbatim: what is spoken, and the private notes.
-NARRATION = [f"Narration of beat {x}, spoken aloud." for x in "ABCD"]
-NOTES = ["Private note on beat A.", "Private note on beat C."]
-
-
-def everywhere(html: str) -> str:
-    """The page's text plus every embedded block decoded, so nothing hidden in a block escapes the search."""
-    blocks = re.findall(r'<script type="application/octet-stream" id="clip-\d+">(.*?)</script>', html, re.S)
-    return html + "".join(base64.b64decode(b).decode("latin-1") for b in blocks)
 
 
 def test_each_transcript_mode_carries_exactly_its_text(exported):
@@ -55,12 +42,12 @@ def test_the_current_beat_is_highlighted_and_scrolled_into_view(open_player):
     assert current(p) == "Beat C loops" and p.page.evaluate(inside)
 
 
-def test_clicking_an_entry_shows_that_beat_as_last_seen(open_player):
+def test_clicking_an_entry_shows_that_beat_as_last_seen(open_player, frames):
     p = open_player("narration")
-    p.transition(lambda: p.page.click("#transcript section:nth-of-type(2)"), 0, 1, 29)  # beat b's last frame
-    assert current(p) == "Beat B </script> ends no script" and p.front() == (1, 29)
+    p.transition(lambda: p.page.click("#transcript section:nth-of-type(2)"), 0, 1, frames[1] - 1)  # as last seen
+    assert current(p) == "Beat B </script> ends no script" and p.front() == (1, frames[1] - 1)
     assert p.page.evaluate("document.querySelectorAll('#transcript p.note').length") == 0  # narration: no notes
-    p.transition(lambda: p.page.click("#transcript section:nth-of-type(2)"), 1, 1, 29)  # the beat on screen: again
+    p.transition(lambda: p.page.click("#transcript section:nth-of-type(2)"), 1, 1, frames[1] - 1)  # on screen: again
 
 
 def box(p, sel: str) -> dict:
