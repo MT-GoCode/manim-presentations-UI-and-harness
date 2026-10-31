@@ -149,3 +149,32 @@ def test_no_environment_variable_reaches_a_chapter(prebuilt, tmp_path):
         return [(b["slug"], b["fingerprint"]) for b in json.loads(Layout(talk).index_path.read_text())["beats"]]
 
     assert beats(root) == beats(cold)
+
+
+def branch_on(condition: str):
+    def edit(root):
+        path = root / "chapters" / "sizes.py"
+        text = path.read_text().replace(GROWS, GROWS + f"    if {condition}:\n        small.shift([1, 0, 0])\n")
+        path.write_text("import os\n" + text)
+
+    return edit
+
+
+def test_an_access_check_is_an_input(prebuilt):
+    root = prebuilt("edge")
+    assert ran(root, branch_on('os.access(talk.root / "assets" / "flag.txt", os.F_OK)')) == {"sizes"}
+    assert ran(root, lambda r: (r / "assets" / "flag.txt").write_text("on")) == {"sizes"}
+
+
+def test_a_mode_change_is_an_input(prebuilt):
+    root = prebuilt("edge")
+    assert ran(root, branch_on('(talk.root / "assets" / "swatch.png").stat().st_mode & 0o100')) == {"sizes"}
+    assert ran(root, lambda r: (r / "assets" / "swatch.png").chmod(0o755)) == {"paths", "sizes"}
+
+
+def test_a_chapter_may_not_start_other_programs(prebuilt):
+    """What a child process reads is invisible to the read guard, so starting one is refused at its line."""
+    root = prebuilt("edge")
+    branch_on('__import__("subprocess").run(["/bin/echo", "hi"]).returncode == 0')(root)
+    r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
+    assert r.returncode == 1 and "a talk may not start other programs; it started /bin/echo" in r.stdout + r.stderr

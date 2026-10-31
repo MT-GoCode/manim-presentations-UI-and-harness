@@ -202,14 +202,16 @@ def engine_code() -> str:
     return h.hexdigest()
 
 
-def library_code(identity: dict[str, str]) -> str:
-    """The installed files of each library `identity` names, by the hashes uv recorded at install (RECORD): a
-    reinstall of a library at the same version changes it too. An edit made in place is not caught."""
-    from importlib.metadata import distribution
+def library_code() -> str:
+    """Every installed distribution, by the file hashes its installer recorded (RECORD): any library pass 1 can import
+    (svgelements parses every Text), and a reinstall at the same version too. An edit made in place is not caught."""
+    from importlib.metadata import distributions
 
     h = hashlib.sha256()
-    for d in ("manim", "pycairo", "av", "numpy", "pillow"):
-        h.update((distribution(d).read_text("RECORD") or "").encode())
+    for d in sorted(distributions(), key=lambda d: d.metadata["Name"]):
+        record = d.read_text("RECORD")
+        assert record is not None, f"{d.metadata['Name']} has no RECORD: reinstall the environment (uv sync)"
+        h.update(d.metadata["Name"].encode() + b"\0" + record.encode())
     return h.hexdigest()
 
 
@@ -235,15 +237,18 @@ def pass1_base(
 
 
 def pass1_key(base: list[str], snapshot: Path, inputs: tuple[str, ...]) -> str:
-    """`base` and the current digest of each talk path the chapter depended on: a file's sha256 (or "dir" for a
-    stat'ed folder), a listed folder's ("dir/") sorted entry names, or "absent" once gone."""
+    """`base` and the current digest of each talk path the chapter depended on: a file's sha256 with its mode and
+    mtime (what a stat shows; the snapshot keeps both), a stat'ed folder's mode and mtime, a listed folder's ("dir/")
+    sorted entry names, or "absent" once gone."""
     h = hashlib.sha256(json.dumps(base).encode())
     for rel in inputs:
         p = snapshot / rel.rstrip("/")
         if rel.endswith("/"):
             digest = json.dumps(sorted(os.listdir(p))) if p.is_dir() else "absent"
         else:
-            digest = sha256(p) if p.is_file() else "dir" if p.is_dir() else "absent"
+            s = p.stat() if p.exists() else None
+            shown = f"{s.st_mode} {s.st_mtime_ns}" if s else ""
+            digest = f"{sha256(p)} {shown}" if p.is_file() else f"dir {shown}" if p.is_dir() else "absent"
         h.update(f"{rel}\0{digest}\0".encode())
     return h.hexdigest()
 
@@ -430,7 +435,7 @@ def build(talk: Path, workers: int | None) -> int:
     env = {**{k: os.environ[k] for k in CHILD_ENV if k in os.environ}, "PYTHONHASHSEED": "0"}
     tex_env = {**env, "PATH": (tinytex() / "bin-path").read_text().strip() + os.pathsep + os.environ["PATH"]}
     identity = clip.identity()
-    common = (engine_code(), identity, library_code(identity), cid, tex_env, settings.to_argv())
+    common = (engine_code(), identity, library_code(), cid, tex_env, settings.to_argv())
 
     def base(c: Chapter) -> list[str]:
         return pass1_base(*common, c.title or c.slug)

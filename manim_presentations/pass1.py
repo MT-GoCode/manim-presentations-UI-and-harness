@@ -11,12 +11,17 @@ import sys
 if __name__ == "__main__":
     os.chdir(sys.argv[1])
 
+import shutil
 import tempfile
+import threading
 from os.path import realpath
 from pathlib import Path
 from typing import Any
 
 READ_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "glob.glob"})
+# A child process reads files no audit event shows, so a chapter may start only TinyTeX's own programs (Manim's
+# latex and dvisvgm calls).
+SPAWN_EVENTS = frozenset({"subprocess.Popen", "os.posix_spawn", "os.exec", "os.system", "os.spawn"})
 SYSTEM_ROOTS = ("/System", "/usr", "/Library", "/opt/homebrew", "/dev/null")
 EXCLUSIVE_CREATE = os.O_CREAT | os.O_EXCL
 
@@ -39,6 +44,7 @@ class ReadGuard:
 
         self.cache = realpath(cache)
         self.snapshot = realpath(snapshot)
+        self.tinytex = realpath(tinytex)
         package = Path(manim_presentations.__file__).parent
         self.roots = tuple(
             realpath(p) for p in (snapshot, sys.prefix, sys.base_prefix, package, tinytex, cache, *SYSTEM_ROOTS)
@@ -50,15 +56,28 @@ class ReadGuard:
         self.violations: list[str] = []
         self.cache_entries: set[str] = set()
         self.inputs: set[str] = set()  # snapshot-relative: files opened or stat'ed, and folders listed (as "dir/")
-        self.noting = False
+        self.quiet = threading.local()  # per thread: the guard's own stats (in realpath) are not the chapter's
+
+    def own(self, path: str) -> str:
+        """realpath without noting the stats it makes."""
+        self.quiet.on = True
+        try:
+            return realpath(path)
+        finally:
+            self.quiet.on = False
 
     def __call__(self, event: str, args: tuple[Any, ...]) -> None:
-        if not self.active or event not in READ_EVENTS:
+        if not self.active:
+            return
+        if event in SPAWN_EVENTS:
+            self.spawned(event, args)
+            return
+        if event not in READ_EVENTS:
             return
         path = args[0]
         if not isinstance(path, (str, bytes, os.PathLike)):  # a file descriptor or None: already opened, or cwd
             return
-        p = realpath(os.fsdecode(path))
+        p = self.own(os.fsdecode(path))
         self.note(p, listed=event != "open")
         if event == "open":
             if p.startswith(self.cache + os.sep):
@@ -76,17 +95,28 @@ class ReadGuard:
             rel = os.path.relpath(p, self.snapshot)
             self.inputs.add(rel.rstrip("/") + "/" if listed else rel)
 
+    def spawned(self, event: str, args: tuple[Any, ...]) -> None:
+        """Refuse any child process but TinyTeX's programs: what a child reads is invisible to this guard."""
+        match event:
+            case "subprocess.Popen":
+                command = args[0] or (args[1] if isinstance(args[1], (str, bytes, os.PathLike)) else args[1][0])
+            case "os.system":
+                command = os.fsdecode(args[0]).split()[0]
+            case _:
+                command = args[0]
+        found = shutil.which(os.fsdecode(command)) or os.fsdecode(command)
+        program = self.own(found)
+        if not program.startswith(self.tinytex + os.sep):
+            self.violations.append(program)
+            raise PermissionError(f"a talk may not start other programs; it started {program}")
+
     def stat(self, real: Any) -> Any:
-        """os.stat/os.lstat noting their path: CPython raises no audit event for a stat, yet `Path.exists()` and
-        `.stat()` decide what a chapter draws as surely as a read does."""
+        """os.stat/os.lstat/os.access noting their path: CPython raises no audit event for these, yet
+        `Path.exists()`, `.stat()` and `os.access()` decide what a chapter draws as surely as a read does."""
 
         def noted(path: Any, *args: Any, **kwargs: Any) -> Any:
-            if self.active and not self.noting and isinstance(path, (str, bytes, os.PathLike)):
-                self.noting = True  # realpath stats too: note only the chapter's own call
-                try:
-                    self.note(realpath(os.fsdecode(path)), listed=False)
-                finally:
-                    self.noting = False
+            if self.active and not getattr(self.quiet, "on", False) and isinstance(path, (str, bytes, os.PathLike)):
+                self.note(self.own(os.fsdecode(path)), listed=False)
             return real(path, *args, **kwargs)
 
         return noted
@@ -112,7 +142,7 @@ def main(argv: list[str]) -> int:
     where = chapter.relative_to(snapshot_path)
     guard = ReadGuard(snapshot_path, cache_path, Path(tinytex))
     sys.addaudithook(guard)
-    os.stat, os.lstat = guard.stat(os.stat), guard.stat(os.lstat)
+    os.stat, os.lstat, os.access = guard.stat(os.stat), guard.stat(os.lstat), guard.stat(os.access)
     clip.render_config(Settings.from_argv(settings_json))
     config.update(
         {
