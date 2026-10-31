@@ -153,6 +153,13 @@ class Layout:
         tmp.write_bytes(INDEX.dump_json(index, by_alias=True))
         os.replace(tmp, self.index_path)
 
+    def build_id(self) -> str | None:
+        """The committed build's identity, read without validating the index; None before the first build."""
+        try:
+            return json.loads(self.index_path.read_bytes())["build_id"]
+        except FileNotFoundError:
+            return None
+
     def previous(self) -> PreviousBuild | NoPrevious:
         if not self.index_path.exists():
             return NoPrevious(reason=Absent())

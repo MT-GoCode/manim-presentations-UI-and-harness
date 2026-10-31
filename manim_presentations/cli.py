@@ -58,26 +58,19 @@ def run_shots(root: Path, args: argparse.Namespace) -> int:
 
 
 def run_present(root: Path, args: argparse.Namespace) -> int:
-    from manim_presentations import protocol
-    from manim_presentations.deck import Busy, Deck, IncompatibleBuild, Stale
+    from manim_presentations.deck import Busy, IncompatibleBuild, Stale
+    from manim_presentations.presenter import UnknownBeat, present
 
     try:
-        deck = Deck.open(root)
-    except IncompatibleBuild as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
-    slugs = tuple(b.slug for b in deck.beats)
-    if args.start is not None and args.start not in slugs:
-        print(f"error: --from {args.start}: no such beat; the beats are: {' '.join(slugs)}", file=sys.stderr)
+        return present(root, args.start)
+    except UnknownBeat as e:
+        slug, slugs = e.args
+        print(f"error: --from {slug}: no such beat; the beats are: {' '.join(slugs)}", file=sys.stderr)
         return 2
-    from manim_presentations.presenter import present
-
-    try:
-        return present(deck, None if args.start is None else protocol.before(args.start, slugs))
     except Busy:
         print(f"error: {root} is already being presented", file=sys.stderr)
         return 3
-    except Stale as e:
+    except (IncompatibleBuild, Stale) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 

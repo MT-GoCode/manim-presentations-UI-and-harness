@@ -4,7 +4,10 @@ failure stays down, a closed window waits for a click, a crash is relaunched."""
 
 import json
 import os
+import signal
+import socket
 import sys
+import threading
 import time
 from collections.abc import Callable
 from functools import partial
@@ -12,7 +15,17 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 
-from PySide6.QtCore import QEvent, QFileSystemWatcher, QObject, QSignalBlocker, QSize, Qt, QTimer
+from PySide6.QtCore import (
+    QEvent,
+    QFileSystemWatcher,
+    QObject,
+    QSignalBlocker,
+    QSize,
+    QSocketNotifier,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QCloseEvent,
     QColor,
@@ -53,6 +66,8 @@ CONNECT_RETRY_MS = 50  # polling a launched Audience's socket: invisible against
 # do not count.
 CHORD = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier
 ACCENT = "#3d7eff"
+LOCK_RETRY_S = 1.0  # §3.7: GC's liveness probe holds the presenter lock for microseconds; 1 s is imperceptible
+PARENT_WATCH_MS = 1000  # the parent-death watch's interval, as the scene processes' (talk.watch_parent)
 TEXT_EDIT_KEYS = ("Up", "Down", "R")  # typed while the editor has focus; PageUp/PageDown always navigate
 
 
@@ -74,6 +89,19 @@ def show_for(position: p.Before | p.At, beat: d.BuiltBeat, how: How) -> Shown:
 def held(message: Shown) -> Shown:
     """What `message` shows once it settles: a Play ends holding its last frame."""
     return p.Hold(position=message.position, clip=message.clip) if isinstance(message, p.Play) else message
+
+
+class UnknownBeat(Exception):
+    """`--from` names no beat of the deck; args: the slug, the deck's slugs."""
+
+
+def open_deck(root: Path) -> d.Deck:
+    """The deck, and its clips pinned, under the shared clips lock: no commit can collect a clip between the two."""
+    layout = d.Layout(root)
+    with layout.clips_shared():
+        deck = d.Deck.open(root)
+        layout.write_pins({b.clip.stem for b in deck.beats})
+    return deck
 
 
 def socket_path(root: Path) -> str:
@@ -257,6 +285,9 @@ class Status(QLabel):
 
 
 class Presenter(QMainWindow):
+    opened = Signal(object)  # a newly committed Deck, opened off the GUI thread
+    open_failed = Signal(str)
+
     def __init__(self, deck: d.Deck, start: p.Before | p.At | None):
         """`start` is `--from`'s Position, which wins over what a reconnected Audience reports; None adopts."""
         super().__init__()
@@ -271,12 +302,21 @@ class Presenter(QMainWindow):
         self.red: dict[str, str] = {}  # what is wrong, by source; the status line shows red while any is set
         self.amber: dict[str, str] = {}
         self.started: float | None = None  # monotonic time of the first Next
+        self.last_sent: Shown | None = None  # what the Audience was last told to show, or adopted as showing
+        self.opening = False  # a Deck.open of a new build is running off the GUI thread
+        self.lock_fd = -1  # the presenter lock, set by open_presenter
         self.link = Link(self.root, self.title_text, self.received, self.audience_trouble)
+        self.opened.connect(self.hot_swap)
+        self.open_failed.connect(lambda e: self.set_red("rebuild", f"the new build could not be read: {e}"))
         self._build_ui()
         # The talk folder alone: macOS's FSEvents backend reports in-place rewrites and atomic replaces of its files
         # alike (measured), and a folder watch survives the replace that drops a file watch.
         self.watcher = QFileSystemWatcher([str(self.root)])
-        self.watcher.directoryChanged.connect(self.script_changed)
+        self.watcher.directoryChanged.connect(self.folder_changed)
+        # build/, not index.json: a commit's os.replace never drops a folder watch. Lock and pin rewrites and .media
+        # churn fire it too; each costs one read of build_id.
+        self.build_watcher = QFileSystemWatcher([str(d.Layout(self.root).build)])
+        self.build_watcher.directoryChanged.connect(self.build_changed)
         self.clock = QTimer(self)
         self.clock.timeout.connect(self.refresh_status)
         self.clock.start(1000)  # the elapsed field counts seconds
@@ -292,17 +332,7 @@ class Presenter(QMainWindow):
         self.timeline.setHeaderHidden(True)
         self.timeline.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # a click jumps without taking the keys
         self.timeline.setIconSize(QSize(128, round(128 * self.deck.render.pixel_height / self.deck.render.pixel_width)))
-        self.items: dict[str, QTreeWidgetItem] = {}
-        beats = {b.slug: b for b in self.deck.beats}
-        for chapter, chapter_title, chapter_beats in self.deck.structure:
-            parent = QTreeWidgetItem(self.timeline, [chapter_title or chapter])
-            parent.setFlags(parent.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            for slug, title in chapter_beats:
-                item = QTreeWidgetItem(parent, [title or slug])
-                item.setIcon(0, QIcon(str(beats[slug].last_png)))
-                item.setData(0, Qt.ItemDataRole.UserRole, slug)
-                self.items[slug] = item
-            parent.setExpanded(True)
+        self.fill_timeline()
         self.timeline.itemClicked.connect(self.clicked)
         self.now_still, self.next_still = Still(), Still()
         self.next_label = QLabel("Next")
@@ -354,6 +384,20 @@ class Presenter(QMainWindow):
         self.buttons["next"].setStyleSheet(f"background: {ACCENT}; font-size: 20pt;")
         self.flash_base["next"] = self.buttons["next"].styleSheet()
 
+    def fill_timeline(self) -> None:
+        self.timeline.clear()
+        self.items: dict[str, QTreeWidgetItem] = {}
+        beats = {b.slug: b for b in self.deck.beats}
+        for chapter, chapter_title, chapter_beats in self.deck.structure:
+            parent = QTreeWidgetItem(self.timeline, [chapter_title or chapter])
+            parent.setFlags(parent.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            for slug, title in chapter_beats:
+                item = QTreeWidgetItem(parent, [title or slug])
+                item.setIcon(0, QIcon(str(beats[slug].last_png)))
+                item.setData(0, Qt.ItemDataRole.UserRole, slug)
+                self.items[slug] = item
+            parent.setExpanded(True)
+
     # --- navigation: the Presenter owns the Position ---
     def beat_at(self, position: p.Before | p.At) -> d.BuiltBeat:
         match position:
@@ -383,7 +427,8 @@ class Presenter(QMainWindow):
 
     def go(self, position: p.Before | p.At, how: How) -> None:
         self.position = position
-        self.link.send(show_for(position, self.beat_at(position), how))
+        self.last_sent = show_for(position, self.beat_at(position), how)
+        self.link.send(self.last_sent)
         self.show_position()
 
     def flash(self, action: p.Action, color: str | None) -> None:
@@ -418,6 +463,7 @@ class Presenter(QMainWindow):
         match message:
             case p.Hello(last=last):
                 self.adopt(last)
+                print(f"present: Audience connected, showing {self.position}", flush=True)  # for an agent's log
             case p.NowCovered() | p.NowAt():
                 if message.position == self.position:
                     self.now = message
@@ -436,16 +482,71 @@ class Presenter(QMainWindow):
             self.go(start, "show")
             return
         match last:
-            case p.NowAt(position=p.At(slug=slug), clip=clip) if (
-                slug in self.slugs and self.clip_of(last.position) == clip
-            ):
-                self.position, self.now = last.position, last
+            case p.NowAt(position=p.At(slug=slug) as at, clip=clip) if slug in self.slugs and self.clip_of(at) == clip:
+                self.position, self.now = at, last
+                self.last_sent = show_for(at, self.beat_at(at), "show")  # what the echo settles to
                 self.show_position()
-            case p.NowCovered(clip=clip) if clip == self.clip_of(p.Before()):
-                self.position, self.now = p.Before(), last
+            case p.NowCovered(position=before, clip=clip) if clip == self.clip_of(before):
+                self.position, self.now = before, last
+                self.last_sent = show_for(before, self.beat_at(before), "show")
                 self.show_position()
             case _:
                 self.go(self.position, "show")
+
+    # --- hot-swap: every committed build is adopted while presenting ---
+    def folder_changed(self, path: str) -> None:
+        build = d.Layout(self.root).build
+        if build.is_dir() and str(build) not in self.build_watcher.directories():
+            self.build_watcher.addPath(str(build))  # build/ was removed and made again
+            self.build_changed(str(build))
+        self.script_changed(path)
+
+    def build_changed(self, _path: str) -> None:
+        if self.opening or d.Layout(self.root).build_id() in (None, self.deck.build_id):
+            return
+
+        def run() -> None:
+            try:
+                self.opened.emit(open_deck(self.root))
+            except (d.IncompatibleBuild, ValueError, OSError) as e:
+                self.open_failed.emit(str(e))
+
+        self.opening = True
+        threading.Thread(target=run, daemon=True).start()
+
+    def hot_swap(self, deck: d.Deck) -> None:
+        """Keep the Position by slug (or the nearest earlier surviving beat), and tell the Audience only what its
+        settled picture changes: a beat whose clip is unchanged is never restarted, cut short or replayed."""
+        self.opening = False
+        old = self.slugs
+        self.deck, self.slugs = deck, tuple(b.slug for b in deck.beats)
+        self.red.pop("rebuild", None)
+        self.red.pop("removed", None)
+        if isinstance(self.position, p.At) and self.position.slug not in self.slugs:
+            gone = self.position.slug
+            kept = [s for s in old[: old.index(gone)] if s in self.slugs]
+            self.position = p.At(slug=kept[-1]) if kept else p.Before()
+            where = kept[-1] if kept else "the start"
+            self.red["removed"] = f"beat {gone} was removed by the rebuild; now at {where}"
+        self.amber.pop("stale", None)
+        if deck.stale:
+            self.amber["stale"] = f"changed since the build: {', '.join(deck.stale)}"
+        if deck.structure_mismatch:
+            self.red["structure"] = "script.md headings changed — run `mpres build`"
+        else:
+            self.red.pop("structure", None)
+        self.fill_timeline()
+        settled = show_for(self.position, self.beat_at(self.position), "show")
+        if self.last_sent is None or held(settled) != held(self.last_sent):
+            self.last_sent = settled
+            self.link.send(settled)
+        self.show_position()
+        self.build_changed("")  # a build committed while this one was opening
+
+    def set_red(self, source: str, text: str) -> None:
+        self.opening = False
+        self.red[source] = text
+        self.refresh_status()
 
     def audience_trouble(self, text: str | None) -> None:
         if text is None:
@@ -576,16 +677,31 @@ class Presenter(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.link.quit()
+        if self.lock_fd >= 0:  # a second close must not close whatever fd reuses the number
+            os.close(self.lock_fd)  # pins count only while this lock is held
+            self.lock_fd = -1
         event.accept()
 
 
-def open_presenter(deck: d.Deck, start: p.Before | p.At | None) -> Presenter:
-    """Startup order: connect to the talk's socket; a live Audience is a reconnect (it adopts this deck, stale or
-    not); none is a fresh start, which refuses a stale deck before anything launches. Needs a QApplication."""
-    window = Presenter(deck, start)
-    if not window.link.connect_live():
-        d.require_fresh(deck)
-        window.link.launch()
+def open_presenter(root: Path, start: str | None) -> Presenter:
+    """Startup order: take the presenter lock (the window holds it until it closes); open and pin the deck; connect
+    to the talk's socket; a live Audience is a reconnect (it adopts
+    this deck, stale or not); none is a fresh start, which refuses a stale deck before anything launches. `start` is
+    `--from`'s beat. Needs a QApplication."""
+    fd = lock(d.Layout(root))
+    try:
+        deck = open_deck(root)
+        slugs = tuple(b.slug for b in deck.beats)
+        if start is not None and start not in slugs:
+            raise UnknownBeat(start, slugs)
+        window = Presenter(deck, None if start is None else p.before(start, slugs))
+        if not window.link.connect_live():
+            d.require_fresh(deck)
+            window.link.launch()
+    except BaseException:
+        os.close(fd)
+        raise
+    window.lock_fd = fd
     app = QApplication.instance()
     assert app is not None
     app.installEventFilter(window)
@@ -594,11 +710,40 @@ def open_presenter(deck: d.Deck, start: p.Before | p.At | None) -> Presenter:
     return window
 
 
-def present(deck: d.Deck, start: p.Before | p.At | None) -> int:
-    fd = d.Layout(deck.root).presenter_lock()
-    try:
-        app = QApplication([])
-        open_presenter(deck, start)
-        return app.exec()
-    finally:
-        os.close(fd)
+def lock(layout: d.Layout) -> int:
+    deadline = time.monotonic() + LOCK_RETRY_S
+    while True:
+        try:
+            return layout.presenter_lock()
+        except d.Busy:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.01)
+
+
+def route_signals(window: Presenter) -> list[object]:
+    """Closing by cause. Intent (SIGINT, SIGTERM) closes both windows; accident (SIGHUP, a dead parent) exits
+    without Quit, so the Audience and the Zoom share stay up and a re-run reconnects. Returns what must stay alive."""
+    wake, woken = socket.socketpair()
+    for end in (wake, woken):
+        end.setblocking(False)
+    signal.set_wakeup_fd(woken.fileno())  # the C handler wakes the Qt loop, so the Python handler runs at once
+    notifier = QSocketNotifier(wake.fileno(), QSocketNotifier.Type.Read)
+    notifier.activated.connect(lambda: wake.recv(64))
+    for intent in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(intent, lambda *_: window.close())
+    signal.signal(signal.SIGHUP, lambda *_: os._exit(128 + signal.SIGHUP))  # closes the lock fds and the socket
+    parent = os.getppid()  # uv, under bin/mpres: its SIGKILL cannot be forwarded (macOS has no PR_SET_PDEATHSIG)
+    watch = QTimer()
+    watch.timeout.connect(lambda: os.getppid() != parent and os._exit(1))
+    watch.start(PARENT_WATCH_MS)
+    return [wake, woken, notifier, watch]
+
+
+def present(root: Path, start: str | None) -> int:
+    app = QApplication([])
+    window = open_presenter(root, start)
+    kept = route_signals(window)
+    code = app.exec()
+    del kept
+    return code
