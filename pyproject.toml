@@ -144,15 +144,3 @@ name = "shots reads the deck and decodes stills; it never builds"
 type = "forbidden"
 source_modules = ["manim_presentations.shots"]
 forbidden_modules = ["manim_presentations.build", "manim_presentations.clip", "manim_presentations.talk", "manim_presentations.pass1", "manim_presentations.worker", "manim_presentations.manim_hooks", "manim"]
-
-[[tool.importlinter.contracts]]
-name = "the Audience imports only the wire: its protocol hash covers audience.py and protocol.py alone"
-type = "forbidden"
-source_modules = ["manim_presentations.audience"]
-forbidden_modules = [
-    "manim_presentations.cli", "manim_presentations.build", "manim_presentations.worker", "manim_presentations.pass1",
-    "manim_presentations.talk", "manim_presentations.manim_hooks", "manim_presentations.clip",
-    "manim_presentations.shots", "manim_presentations.geometry", "manim_presentations.deck",
-    "manim_presentations.schedule", "manim_presentations.stills", "manim_presentations.settings",
-    "manim_presentations.script", "manim_presentations.headroom", "manim_presentations.records", "manim", "av", "cairo",
-]

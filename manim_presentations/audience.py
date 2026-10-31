@@ -99,19 +99,13 @@ class Audience(QWidget):
         if self.fatal is None:
             self.send(p.Hello(last=self.now, protocol=p.AUDIENCE_CODE))
             return
-        self.send_last(p.Fatal(reason=self.fatal))
+        self.send(p.Fatal(reason=self.fatal))
         QApplication.exit(1)
 
     def send(self, message: p.ToPresenter) -> None:
         if self.client is not None and self.client.state() == QLocalSocket.LocalSocketState.ConnectedState:
             self.client.write(p.encode(message))
             self.client.flush()
-
-    def send_last(self, message: p.ToPresenter) -> None:
-        """For a message the process may exit right after: it waits until the bytes are written."""
-        self.send(message)
-        if self.client is not None:
-            self.client.waitForBytesWritten()
 
     def _read(self) -> None:
         assert self.client is not None
@@ -140,12 +134,11 @@ class Audience(QWidget):
     def load(self, message: Shown, expect: Expect, loops: int) -> None:
         """setSource emits the outgoing clip's status and frames synchronously; with nothing expected, they do
         nothing. The new expectation starts once the new source is set."""
-        if self.last_valid is not None:
-            self.on_failure = self.last_valid
-        self.shown, self.expect, self.last_valid = message, None, None
+        self.on_failure, self.shown, self.expect, self.last_valid = self.last_valid, message, None, None
         self.player.setLoops(loops)
         self.player.setSource(QUrl.fromLocalFile(message.clip))
         self.expect = expect
+        self._status(self.player.mediaStatus())  # the same clip again: its LoadedMedia came during setSource
 
     # --- what the player actually shows ---
     def _status(self, status: QMediaPlayer.MediaStatus) -> None:
@@ -185,7 +178,7 @@ class Audience(QWidget):
         self.send(p.Failed(position=self.shown.position, clip=self.shown.clip, reason=reason or error.name))
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        self.send_last(p.Closed())
+        self.send(p.Closed())
         event.accept()
 
 
@@ -216,7 +209,7 @@ def main(argv: list[str]) -> int:
     def died(kind: type[BaseException], error: BaseException, trace: TracebackType | None) -> None:
         """Qt prints an exception raised in a slot and carries on; an Audience in an unknown state must stop."""
         traceback.print_exception(kind, error, trace)
-        audience.send_last(p.Fatal(reason=f"{kind.__name__}: {error}"))
+        audience.send(p.Fatal(reason=f"{kind.__name__}: {error}"))
         os._exit(1)
 
     sys.excepthook = died

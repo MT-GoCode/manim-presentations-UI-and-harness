@@ -20,7 +20,7 @@ import av
 import numpy as np
 import pytest
 from conftest import REPO, SUBPROCESS_TIMEOUT
-from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame
 from PySide6.QtNetwork import QLocalSocket
@@ -231,6 +231,9 @@ def test_a_missing_clip_fails_naming_it_and_keeps_the_picture(rig, clips, tmp_pa
     failed = client.next()
     assert isinstance(failed, p.Failed) and (failed.position, failed.clip) == (at(), gone) and failed.reason
     assert shows(view.sink.videoFrame()) == ("b", 0)  # the audience never sees a black window
+    client.send(p.Play(position=at("y"), clip=str(tmp_path / "gone-too.mp4")))
+    assert isinstance(client.next(), p.Failed)
+    assert shows(view.sink.videoFrame()) == ("b", 0)  # nor after a second failure
 
 
 def test_cover_shows_frame_zero_paused(rig, clips):
@@ -241,17 +244,43 @@ def test_cover_shows_frame_zero_paused(rig, clips):
     assert view.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
 
 
-def test_hold_shows_only_the_last_frame_paused(rig, clips):
+@pytest.mark.parametrize(
+    "first",
+    ["play-other", "play-same-held", "play-same-mid", "cover-same", "loop-same", "hold-same"],
+)
+def test_hold_shows_only_the_last_frame_paused(rig, clips, first):
+    """After any message, of another clip or of this very clip (Qt's same-source path), mid-play or settled."""
     view, client, presented = rig
-    client.send(p.Play(position=at("x"), clip=str(clips["b"])))
-    assert client.next().state == "playing" and client.next().state == "held"
-    start = len(presented)
-    client.send(p.Hold(position=at(), clip=str(clips["a"])))
+    a = str(clips["a"])
+    match first:
+        case "play-other":
+            client.send(p.Play(position=at("x"), clip=str(clips["b"])))
+            assert client.next().state == "playing" and client.next().state == "held"
+        case "play-same-held":
+            client.send(p.Play(position=at("x"), clip=a))
+            assert client.next().state == "playing" and client.next().state == "held"
+        case "play-same-mid":
+            client.send(p.Play(position=at("x"), clip=a))
+            assert client.next().state == "playing"
+        case "cover-same":
+            client.send(p.Cover(position=p.Before(), clip=a))
+            client.next()
+        case "loop-same":
+            client.send(p.Loop(position=at("x"), clip=a))
+            client.next()
+        case _:
+            assert first == "hold-same"
+            client.send(p.Hold(position=at("x"), clip=a))
+            client.next()
+    start, sent = len(presented), len(client.got)
+    client.send(p.Hold(position=at(), clip=a))
     held = client.next()
-    assert isinstance(held, p.NowAt) and (held.clip, held.state) == (str(clips["a"]), "held")
+    assert isinstance(held, p.NowAt) and (held.position, held.clip, held.state) == (at(), a, "held")
     assert round(held.pts * FPS) == FRAMES - 1
-    assert [shows(f) for f in presented[start:]] == [("a", FRAMES - 1)]  # frame 0 never flashes first
+    assert [shows(f) for f in presented[start:]][-1] == ("a", FRAMES - 1)
+    assert ("a", 0) not in [shows(f) for f in presented[start:]]  # frame 0 never flashes first
     assert view.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
+    assert len(client.got) == sent + 1
 
 
 def test_the_window_is_titled_letterboxed_and_sized_for_one_screen(rig):
@@ -296,6 +325,53 @@ def test_keys_pressed_on_the_audience_reach_the_presenter_once(rig, qtbot, qapp)
     finally:
         qapp.removeEventFilter(forwarder)
     assert client.got[1:] == [p.Key(action=a) for a in ("next", "previous", "replay")]
+
+
+def test_unmapped_keys_pass_through_the_forwarder(rig, qtbot, qapp):
+    """Only the five mapped keys are taken; Cmd+W and the like still reach the window."""
+    view, client, _ = rig
+    forwarder = audience.KeyForwarder(view)
+    qapp.installEventFilter(forwarder)
+    seen = []
+
+    class Recorder(QObject):
+        def eventFilter(self, watched, event):
+            if event.type() == QEvent.Type.KeyPress:
+                seen.append(event.key())
+            return False
+
+    recorder = Recorder()
+    view.installEventFilter(recorder)
+    try:
+        QTest.keyClick(view.windowHandle(), Qt.Key.Key_A)
+        qtbot.wait(200)
+    finally:
+        qapp.removeEventFilter(forwarder)
+    assert seen == [Qt.Key.Key_A] and client.got[1:] == []
+
+
+def test_the_audience_runs_only_the_code_its_hash_covers(tmp_path):
+    """AUDIENCE_CODE hashes audience.py and protocol.py: importing the Audience loads no other engine module, and a
+    change to either file changes the hash."""
+    probe = "import sys, manim_presentations.audience; print(sorted(m for m in sys.modules if m.split('.')[0] in {0}))"
+    roots = ("manim_presentations", "manim", "av", "cairo")
+    run = [sys.executable, "-P", "-c", probe.format(set(roots))]
+    loaded = subprocess.run(run, capture_output=True, text=True, timeout=60, check=True).stdout
+    assert loaded.split() == [
+        "['manim_presentations',",
+        "'manim_presentations.audience',",
+        "'manim_presentations.protocol']",
+    ]
+    for edited in ("audience.py", "protocol.py"):
+        pkg = tmp_path / edited / "manim_presentations"
+        shutil.copytree(REPO / "manim_presentations", pkg, ignore=shutil.ignore_patterns("__pycache__"))
+        (pkg / edited).write_text((pkg / edited).read_text() + "\n")
+        code = "from manim_presentations import protocol; print(protocol.AUDIENCE_CODE)"
+        env = {**os.environ, "PYTHONPATH": str(pkg.parent)}
+        other = subprocess.run(
+            [sys.executable, "-P", "-c", code], env=env, capture_output=True, text=True, timeout=60, check=True
+        )
+        assert other.stdout.strip() != p.AUDIENCE_CODE, edited
 
 
 def test_closing_the_window_tells_the_presenter(rig):
