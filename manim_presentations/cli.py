@@ -108,7 +108,12 @@ def parser() -> argparse.ArgumentParser:
     e = sub.add_parser("export", help="the talk as one self-contained HTML file that plays offline")
     e.add_argument("talk", help="path to a <name>.manim-presentation folder")
     e.add_argument("--out", required=True, type=html_out, metavar="FILE.html", help="where to write the page")
-    e.add_argument("--height", type=even, metavar="H", help="video height (default: min(1080, the source height))")
+    e.add_argument(
+        "--height",
+        type=even,
+        metavar="H",
+        help="video height, even (default: the measured web height or the source height, whichever is lower; printed)",
+    )
     e.add_argument(
         "--crf", type=crf, metavar="C", help="x264 quality, 0-51, lower is better (default: measured, printed)"
     )
@@ -116,7 +121,8 @@ def parser() -> argparse.ArgumentParser:
         "--transcript",
         choices=("none", "narration", "full"),
         default="none",
-        help="none: no text of the script; narration: what is spoken; full: plus the private > notes (default: none)",
+        help="none: titles only, no narration or notes; narration: plus what is spoken; full: plus the private > notes "
+        "(default: none)",
     )
     e.add_argument("--workers", type=positive, metavar="N", help=workers)
     e.set_defaults(run=run_export)

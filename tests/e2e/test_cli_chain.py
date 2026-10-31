@@ -87,6 +87,9 @@ def test_build_then_shots_then_export_plays_the_template_talk_offline_to_its_end
             old = page.evaluate_handle(front)
             page.keyboard.press("ArrowDown")
             page.wait_for_function(f"(old) => {{ const v = ({front})(); return v && v !== old; }}", arg=old)
-        page.wait_for_function(f"() => {{ const v = ({front})(); return v.ended || v.loop; }}")
+        page.evaluate(  # the last beat ends, or (a loop) wraps: a seek the browser makes, so it played to its end
+            f"() => {{ const v = ({front})(); for (const e of ['ended', 'seeked']) v.addEventListener(e, () => (window.done = true)); }}"
+        )
+        page.wait_for_function(f"() => window.done || ({front})().ended")
         browser.close()
     assert errors == [] and all(u.startswith(("file:", "blob:")) for u in requests), (errors, requests)

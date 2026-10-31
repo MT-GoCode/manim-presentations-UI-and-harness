@@ -51,7 +51,7 @@ def test_every_frame_of_every_beat_is_the_builds_frame_at_the_asked_size(frames_
         )  # escaped, not closing the block
         assert "<title>Frame codes &lt;&amp;&gt; &lt;!--&lt;script&gt;</title>" in html  # and the player still runs
         assert stat.S_IMODE(out.stat().st_mode) & 0o044 == 0o044  # readable by others, like any file the user writes
-        assert manifest(html)["transcript"] == "none"  # the default: no script text anywhere
+        assert manifest(html)["transcript"] == "none"  # the default: no narration or notes anywhere
         assert not any(line in everywhere(html) for line in NARRATION + NOTES)
         for i, (clip, beat) in enumerate(zip(clips(html), beats, strict=True), 1):
             facts, codes = decoded(clip)
