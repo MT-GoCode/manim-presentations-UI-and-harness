@@ -341,8 +341,9 @@ class Presenter(QMainWindow):
         # The talk folder alone: macOS's FSEvents backend reports in-place rewrites and atomic replaces of its files
         # alike (measured), and a folder watch survives the replace that drops a file watch.
         self.watcher = QFileSystemWatcher([str(self.root)])
-        self.watcher.directoryChanged.connect(self.folder_changed)
-        # build/, not index.json: a commit's os.replace never drops a folder watch. Lock and pin rewrites and .media
+        self.watcher.directoryChanged.connect(self.script_changed)
+        # build/, not index.json: a commit's os.replace never drops a folder watch, and on macOS's FSEvents backend a
+        # watch on build/ even outlives build/ being removed and made again (measured). Lock and pin rewrites and .media
         # churn fire it too; each costs one read of build_id.
         self.build_watcher = QFileSystemWatcher([str(d.Layout(self.root).build)])
         self.build_watcher.directoryChanged.connect(self.build_changed)
@@ -534,13 +535,6 @@ class Presenter(QMainWindow):
                 self.go(self.position, "show")
 
     # --- hot-swap: every committed build is adopted while presenting ---
-    def folder_changed(self, path: str) -> None:
-        build = d.Layout(self.root).build
-        if build.is_dir() and str(build) not in self.build_watcher.directories():
-            self.build_watcher.addPath(str(build))  # build/ was removed and made again
-            self.build_changed(str(build))
-        self.script_changed(path)
-
     def build_changed(self, _path: str) -> None:
         if self.opening or d.Layout(self.root).build_id() in (None, self.deck.build_id):
             return

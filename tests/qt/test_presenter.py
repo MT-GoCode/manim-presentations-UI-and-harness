@@ -110,6 +110,7 @@ def test_a_chord_is_not_navigation(talk, open_, qtbot):
     window = open_(talk)
     qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
     QTest.keyClick(window.windowHandle(), Qt.Key.Key_Down, Qt.KeyboardModifier.ControlModifier)  # Cmd+↓
+    QTest.keyClick(window.windowHandle(), Qt.Key.Key_Down, Qt.KeyboardModifier.AltModifier)  # Option+↓
     qtbot.wait(QUIET_MS)
     assert window.position == p.Before()
 
@@ -586,8 +587,7 @@ def test_a_timeline_click_shows_the_beat_as_last_seen(talk, open_, qtbot):
     assert fake.next() == p.Hold(position=p.At(slug="build-up"), clip=clip(talk, "build-up"))  # never replayed
 
 
-def test_from_wins_only_once(talk, open_, qtbot):
-    """A relaunched Audience says Hello again: it gets the current position, not the --from one."""
+def test_a_relaunched_audience_gets_the_current_position_not_the_from_one(talk, open_, qtbot):
     fake = FakeAudience(qtbot, talk)
     window = open_(talk, "build-up")
     fake.hello()
