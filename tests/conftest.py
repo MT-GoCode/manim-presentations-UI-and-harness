@@ -25,9 +25,10 @@ SUBPROCESS_TIMEOUT = 600  # s: a hung build fails its test instead of hanging th
 MiB = 2**20
 # Measured process-tree peaks (cores, bytes) of each level's heaviest test on mac-work-2 (`/usr/bin/time -l`): unit, the
 # whole in-process unit run; build, a pass-1 build at --workers 4 on the 2160-px geometry fixture (parent 191 MiB +
-# four 180 MiB children); e2e, one setup.sh run on a repo copy. Every xdist slot is sized for the heaviest, so slots
+# four 180 MiB children); qt, the whole Audience run in one process (1.77 CPU-s over 6.8 s, 299 MiB); e2e, one
+# setup.sh run on a repo copy. Every xdist slot is sized for the heaviest, so slots
 # never oversubscribe (a stated trade: a light test holds a heavy slot).
-TEST_COST = {"unit": (0.5, 213 * MiB), "build": (1.1, 911 * MiB), "e2e": (1.05, 245 * MiB)}
+TEST_COST = {"unit": (0.5, 213 * MiB), "build": (1.1, 911 * MiB), "qt": (0.26, 299 * MiB), "e2e": (1.05, 245 * MiB)}
 
 
 def pytest_xdist_auto_num_workers(config: pytest.Config) -> int:
