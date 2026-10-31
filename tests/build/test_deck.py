@@ -9,20 +9,13 @@ from conftest import TEST_WORKERS, mpres
 from manim_presentations.deck import Deck, IncompatibleBuild, Layout, Stale, require_fresh
 
 
-def built(talk, name="edge"):
-    root = talk(name)
-    r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
-    assert r.returncode == 0, r.stdout + r.stderr
-    return root
-
-
 def test_never_built_is_incompatible(talk):
     with pytest.raises(IncompatibleBuild, match="never built; run: mpres build"):
         Deck.open(talk("edge"))
 
 
-def test_another_schema_is_incompatible(talk):
-    root = built(talk)
+def test_another_schema_is_incompatible(prebuilt):
+    root = prebuilt("edge")
     index = root / "build" / "index.json"
     raw = json.loads(index.read_text())
     raw["schema"] = 0
@@ -32,8 +25,8 @@ def test_another_schema_is_incompatible(talk):
 
 
 @pytest.mark.parametrize("lost", ["clip", "first_png"])
-def test_a_lost_file_is_incompatible(talk, lost):
-    root = built(talk)
+def test_a_lost_file_is_incompatible(prebuilt, lost):
+    root = prebuilt("edge")
     beat = json.loads((root / "build" / "index.json").read_text())["beats"][0]
     gone = Layout(root).clip(beat["clip"]) if lost == "clip" else root / "build" / beat["first_png"]
     gone.unlink()
@@ -42,14 +35,17 @@ def test_a_lost_file_is_incompatible(talk, lost):
 
 
 def test_a_fresh_build_is_not_stale_and_carries_its_render_settings(talk):
-    deck = Deck.open(built(talk))
+    root = talk("edge")
+    r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
+    assert r.returncode == 0, r.stdout + r.stderr
+    deck = Deck.open(root)
     assert deck.stale == () and not deck.structure_mismatch
     assert (deck.render.pixel_width, deck.render.pixel_height, deck.render.fps) == (480, 270, 30)
     require_fresh(deck)
 
 
-def test_narration_readme_and_ds_store_leave_it_fresh(talk):
-    root = built(talk)
+def test_narration_readme_and_ds_store_leave_it_fresh(prebuilt):
+    root = prebuilt("edge")
     script = root / "script.md"
     script.write_text(script.read_text().replace("## spin\n", "## spin\n\nIt turns.\n\n> breathe\n"))
     (root / "README.md").write_text("notes about this talk")
@@ -70,8 +66,8 @@ def test_narration_readme_and_ds_store_leave_it_fresh(talk):
     ],
     ids=["talk.toml", "new asset", "helper"],
 )
-def test_a_changed_input_makes_it_stale_naming_the_file(talk, change, named):
-    root = built(talk)
+def test_a_changed_input_makes_it_stale_naming_the_file(prebuilt, change, named):
+    root = prebuilt("edge")
     mpres("build", str(root), "--workers", str(TEST_WORKERS))  # a warm second build: no bytecode left behind
     change(root)
     deck = Deck.open(root)
@@ -80,8 +76,8 @@ def test_a_changed_input_makes_it_stale_naming_the_file(talk, change, named):
         require_fresh(deck)
 
 
-def test_a_title_edit_is_a_structure_change_and_rebuilds_only_the_card(talk):
-    root = built(talk, "hello")
+def test_a_title_edit_is_a_structure_change_and_rebuilds_only_the_card(prebuilt):
+    root = prebuilt("hello")
     script = root / "script.md"
     script.write_text(script.read_text().replace("# working: How a beat works", "# working: How beats work"))
     deck = Deck.open(root)
@@ -93,8 +89,8 @@ def test_a_title_edit_is_a_structure_change_and_rebuilds_only_the_card(talk):
     assert rendered == ["working-card"]  # only the chapter card draws talk.title
 
 
-def test_the_export_scratch_folder_survives_a_build(talk):
-    root = built(talk)
+def test_the_export_scratch_folder_survives_a_build(prebuilt):
+    root = prebuilt("edge")
     scratch = Layout(root).export_tmp
     scratch.mkdir()
     (scratch / "in-progress.mp4").write_bytes(b"an export's re-encode")

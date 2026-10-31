@@ -17,8 +17,6 @@ from presenting import (
     QUIET_MS,
     WAIT_MS,
     FakeAudience,
-    build_once,
-    copy_built,
     now_is,
     open_,
     press,
@@ -36,14 +34,9 @@ LOG = REPO / "test-results" / "present-e2e.log"
 SHOT = REPO / "test-results" / "presenter.png"  # the Presenter View at the end of the walk, offscreen
 
 
-@pytest.fixture(scope="session")
-def built(tmp_path_factory, warm_cache):
-    return build_once(tmp_path_factory, warm_cache, "after-loop")
-
-
 @pytest.fixture
-def talk(built, tmp_path):
-    return copy_built(built, tmp_path)
+def talk(prebuilt):
+    return prebuilt("hello", "after-loop")
 
 
 def edit(path, old, new):

@@ -1,4 +1,5 @@
 import fcntl
+import functools
 import hashlib
 import os
 import re
@@ -115,28 +116,46 @@ def copy_talk(tmp_path: Path, name: str, overlay: str | None = None) -> Path:
 def tree_digest(root: Path) -> str:
     h = hashlib.sha256()
     for p in sorted(root.rglob("*")):
-        if p.is_file() and p.name != ".complete":
+        if p.is_file():
             h.update(str(p.relative_to(root)).encode() + p.read_bytes())
     return h.hexdigest()
 
 
-@pytest.fixture(scope="session")
-def warm_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """One warm TeX/text cache per session (xdist's documented recipe: one writer under a lock, the others read)."""
+def once(tmp_path_factory: pytest.TempPathFactory, name: str, make) -> Path:
+    """`make(path)`, run once per session (xdist's documented recipe: one writer under a lock, the others read). Its
+    tree's digest is kept beside it, for `untouched`."""
     # One per session: under xdist every worker's basetemp sits in the session's directory; without it, basetemp is.
     base = tmp_path_factory.getbasetemp()
     shared = base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base
-    done = shared / "warm-cache"
-    with (shared / "warm-cache.lock").open("w") as lock:
+    done, digest = shared / name, shared / f"{name}.digest"
+    with (shared / f"{name}.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if not (done / ".complete").exists():
-            shutil.rmtree(shared / "warm-src", ignore_errors=True)
-            root = copy_talk(shared / "warm-src", "edge", "twins")
-            r = mpres("build", str(root), "--workers", str(TEST_WORKERS_WIDE))
-            assert r.returncode == 0, r.stdout + r.stderr
-            shutil.copytree(root / "build" / ".cache", done, dirs_exist_ok=True)
-            (done / ".complete").write_text(tree_digest(done))
+        if not digest.exists():
+            shutil.rmtree(done, ignore_errors=True)
+            make(done)
+            digest.write_text(tree_digest(done))
     return done
+
+
+def untouched(done: Path) -> None:
+    assert tree_digest(done) == done.with_name(f"{done.name}.digest").read_text(), (
+        f"a test wrote the shared {done.name}"
+    )
+
+
+@pytest.fixture(scope="session")
+def warm_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One warm TeX/text cache per session."""
+
+    def make(done: Path) -> None:
+        src = done.with_name("warm-src")
+        shutil.rmtree(src, ignore_errors=True)
+        root = copy_talk(src, "edge", "twins")
+        r = mpres("build", str(root), "--workers", str(TEST_WORKERS_WIDE))
+        assert r.returncode == 0, r.stdout + r.stderr
+        shutil.copytree(root / "build" / ".cache", done)
+
+    return once(tmp_path_factory, "warm-cache", make)
 
 
 @pytest.fixture
@@ -147,8 +166,43 @@ def talk(tmp_path: Path, warm_cache: Path):
     def make(name: str, overlay: str | None = None, cold: bool = False) -> Path:
         root = copy_talk(tmp_path, name, overlay)
         if not cold:
-            shutil.copytree(warm_cache, root / "build" / ".cache", ignore=shutil.ignore_patterns(".complete"))
+            shutil.copytree(warm_cache, root / "build" / ".cache")
         return root
 
     yield make
-    assert tree_digest(warm_cache) == (warm_cache / ".complete").read_text(), "a test's build wrote the warm cache"
+    untouched(warm_cache)
+
+
+@pytest.fixture(scope="session")
+def builds(tmp_path_factory: pytest.TempPathFactory, warm_cache: Path):
+    """Factory: builds(name, overlay=None) → that talk, warm-seeded and built at TEST_WORKERS, once per session."""
+
+    @functools.cache
+    def make(name: str, overlay: str | None = None) -> Path:
+        def build(done: Path) -> None:
+            root = copy_talk(done, name, overlay)
+            shutil.copytree(warm_cache, root / "build" / ".cache")
+            r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
+            assert r.returncode == 0, r.stdout + r.stderr
+
+        done = once(tmp_path_factory, f"built-{name}-{overlay}", build)
+        return done / f"{name}.manim-presentation"
+
+    return make
+
+
+@pytest.fixture
+def prebuilt(tmp_path: Path, builds):
+    """Factory: prebuilt(name, overlay=None) → tmp_path/built/<talk>, a copy, build/ included, of the talk as its first
+    build left it: for tests whose first build is setup, not the thing under test. On teardown, every shared build
+    it copied must be exactly as it was."""
+    used = []
+
+    def make(name: str, overlay: str | None = None) -> Path:
+        src = builds(name, overlay)
+        used.append(src.parent)
+        return Path(shutil.copytree(src, tmp_path / "built" / src.name))
+
+    yield make
+    for done in used:
+        untouched(done)

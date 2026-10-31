@@ -5,11 +5,9 @@ import os
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"  # never a window on the screen; set before Qt starts
 
-import shutil
 import signal
 
 import pytest
-from conftest import TEST_WORKERS, copy_talk, mpres
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -24,21 +22,6 @@ LAUNCH_MS = 20_000  # a launched Audience's first report: its ~1 s start (PySide
 WAIT_MS = 5000  # a message between live processes
 QUIET_MS = 300  # long enough for a message that should not come to arrive
 BEATS = ("title-card", "the-idea", "working-card", "build-up", "keeps-going")
-
-
-def build_once(tmp_path_factory, warm_cache, overlay=None):
-    """examples/hello (plus an overlay) built once, for tests that each present a copy."""
-    root = copy_talk(tmp_path_factory.mktemp("built"), "hello", overlay)
-    shutil.copytree(warm_cache, root / "build" / ".cache", ignore=shutil.ignore_patterns(".complete"))
-    r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
-    assert r.returncode == 0, r.stdout + r.stderr
-    return root
-
-
-def copy_built(built, tmp_path):
-    root = tmp_path / built.name
-    shutil.copytree(built, root, ignore=shutil.ignore_patterns(".cache", ".media"))
-    return root
 
 
 @pytest.fixture

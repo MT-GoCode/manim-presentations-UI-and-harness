@@ -19,9 +19,7 @@ from presenting import (
     QUIET_MS,
     WAIT_MS,
     FakeAudience,
-    build_once,
     clip,
-    copy_built,
     launches,
     now_is,
     open_,
@@ -40,14 +38,9 @@ from manim_presentations.deck import Deck, Layout
 __all__ = ["launches", "open_"]  # fixtures, used by name
 
 
-@pytest.fixture(scope="session")
-def built(tmp_path_factory, warm_cache):
-    return build_once(tmp_path_factory, warm_cache)
-
-
 @pytest.fixture
-def talk(built, tmp_path):
-    return copy_built(built, tmp_path)
+def talk(prebuilt):
+    return prebuilt("hello")
 
 
 # --- startup, through the CLI ---

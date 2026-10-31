@@ -56,10 +56,9 @@ def engine_copy(tmp_path: Path) -> Path:
     return pkg
 
 
-def test_a_pinned_clip_survives_two_builds(talk):
+def test_a_pinned_clip_survives_two_builds(prebuilt):
     """A live Presenter (it holds the presenter lock) pins the clip it shows; two builds later it still exists."""
-    root = talk("edge")
-    ok(build(root))
+    root = prebuilt("edge")
     shown = clip_of(root, "words")
     layout = Layout(root)
     fd = layout.presenter_lock()
@@ -84,22 +83,20 @@ def test_a_presenter_that_has_not_pinned_yet_does_not_break_a_commit(talk):
         os.close(fd)
 
 
-def test_a_killed_builds_leftovers_are_wiped(talk):
+def test_a_killed_builds_leftovers_are_wiped(prebuilt):
     """A killed build's snapshot still holds a chapter since deleted: kept, it would join this build's snapshot and
     fail pairing as an unnamed chapter."""
-    root = talk("edge")
-    ok(build(root))
+    root = prebuilt("edge")
     ghost = root / "build" / ".media" / "src" / "chapters" / "ghost.py"
     ghost.parent.mkdir(parents=True)
     ghost.write_text("def construct(talk):\n    talk.beat('boo')\n")
     assert rendered(ok(build(root))) == []
 
 
-def test_a_killed_render_leaves_the_previous_build_whole(talk):
+def test_a_killed_render_leaves_the_previous_build_whole(prebuilt):
     """SIGKILL to the parent while its render workers run: the index and every clip it names are as before, and the
     next build renders exactly the edited beat."""
-    root = talk("edge")
-    ok(build(root))
+    root = prebuilt("edge")
     before = (root / "build" / "index.json").read_bytes()
     clips = {b["clip"]: clip_of(root, b["slug"]).read_bytes() for b in index(root)["beats"]}
     edit(root / "chapters" / "text.py", 'Text("Edge"', 'Text("Edged"')
@@ -124,11 +121,8 @@ def test_a_killed_render_leaves_the_previous_build_whole(talk):
     assert rendered(ok(build(root))) == ["words"]
 
 
-def test_an_edit_during_a_build_does_not_reach_its_clips(talk, tmp_path):
-    root = talk("edge")
-    reference = tmp_path / "ref" / "edge.manim-presentation"
-    shutil.copytree(root, reference)
-    ok(build(reference))
+def test_an_edit_during_a_build_does_not_reach_its_clips(talk, prebuilt):
+    root, reference = talk("edge"), prebuilt("edge")
     cmd = [sys.executable, "-P", "-m", "manim_presentations.cli", "build", str(root), "--workers", str(TEST_WORKERS)]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     assert p.stdout is not None
@@ -189,9 +183,8 @@ def test_a_join_that_loses_a_frame_fails_naming_the_beat(talk, tmp_path):
     assert r.returncode == 1 and m and int(m[2]) - int(m[1]) == 1, r.stdout + r.stderr
 
 
-def test_pass1_width_comes_from_the_previous_builds_own_peaks(talk):
-    root = talk("edge")
-    ok(build(root))
+def test_pass1_width_comes_from_the_previous_builds_own_peaks(prebuilt):
+    root = prebuilt("edge")
     peaks = index(root)["chapters"]
     r = ok(build(root, workers=None))
     m = re.search(r"machine: phase=pass-1 \S+ \S+ per_job_cores=(\S+) per_job_ram=(\d+)", r.stdout)
@@ -229,9 +222,8 @@ def test_scene_processes_never_import_from_the_cwd_or_the_live_talk(talk, tmp_pa
     ok(build(root, env=env, cwd=cwd))  # pass 1 and the worker both run the probe
 
 
-def test_a_missing_clip_renders_exactly_its_beat_again(talk):
-    root = talk("edge")
-    ok(build(root))
+def test_a_missing_clip_renders_exactly_its_beat_again(prebuilt):
+    root = prebuilt("edge")
     clip_of(root, "words").unlink()
     assert rendered(ok(build(root))) == ["words"]
 

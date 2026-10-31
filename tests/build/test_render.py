@@ -53,32 +53,28 @@ def test_a_full_build_commits_every_beat_and_a_rebuild_renders_nothing(talk):
     assert rendered(r2) == [] and "render: 0 beats" in r2.stdout
 
 
-def test_a_narration_edit_renders_nothing(talk):
-    root = talk("edge")
-    ok(build(root))
+def test_a_narration_edit_renders_nothing(prebuilt):
+    root = prebuilt("edge")
     edit(root / "script.md", "## spin\n", "## spin\n\nWatch it turn.\n\n> slow down here\n")
     assert rendered(ok(build(root))) == []
 
 
-def test_editing_one_beat_renders_exactly_that_beat(talk):
-    root = talk("edge")
-    ok(build(root))
+def test_editing_one_beat_renders_exactly_that_beat(prebuilt):
+    root = prebuilt("edge")
     edit(root / "chapters" / "closures.py", 'total["ticks"] * 0.001', 'total["ticks"] * 0.002')
     assert rendered(ok(build(root))) == ["after-again"]
 
 
-def test_editing_a_helper_renders_only_the_beats_whose_frames_changed(talk):
-    root = talk("edge")
-    ok(build(root))
+def test_editing_a_helper_renders_only_the_beats_whose_frames_changed(prebuilt):
+    root = prebuilt("edge")
     edit(root / "helpers" / "order.py", "buff=0.3", "buff=0.4")
     assert rendered(ok(build(root))) == ["ordered"]
 
 
-def test_a_late_beat_edit_fast_forwards_exactly_through_accumulated_state(talk):
+def test_a_late_beat_edit_fast_forwards_exactly_through_accumulated_state(prebuilt):
     """The chunk for `after-accumulate` starts mid-chapter, after an UpdateFromFunc closure and a non-time updater
     have accumulated state; its frames verify against pass 1 only if fast-forward replayed every frame's update."""
-    root = talk("edge")
-    ok(build(root))
+    root = prebuilt("edge")
     edit(root / "chapters" / "closures.py", "dot.animate.shift(UP * total", "dot.animate.shift(UP * 1.1 * total")
     r = ok(build(root))
     assert rendered(r) == ["after-accumulate", "after-again"]  # the dot moved, so the next beat's frames did too
@@ -161,9 +157,8 @@ def test_a_clock_read_fails_tee_verification_naming_its_line(talk):
     ), r.stderr
 
 
-def test_a_hostile_cwd_and_user_config_change_nothing(talk, tmp_path):
-    root = talk("edge")
-    ok(build(root))
+def test_a_hostile_cwd_and_user_config_change_nothing(prebuilt, tmp_path):
+    root = prebuilt("edge")
     reference = clips(root)
     shutil.rmtree(root / "build" / "clips")
     (root / "build" / "index.json").unlink()
@@ -179,9 +174,8 @@ def test_a_hostile_cwd_and_user_config_change_nothing(talk, tmp_path):
     assert clips(root) == reference
 
 
-def test_a_schema_mismatch_rebuilds_everything_and_leaves_no_old_clips(talk):
-    root = talk("edge")
-    ok(build(root))
+def test_a_schema_mismatch_rebuilds_everything_and_leaves_no_old_clips(prebuilt):
+    root = prebuilt("edge")
     old = set(os.listdir(root / "build" / "clips"))
     raw = index(root)
     raw["schema"] = 0
@@ -195,11 +189,10 @@ def test_a_schema_mismatch_rebuilds_everything_and_leaves_no_old_clips(talk):
     assert old - set(os.listdir(root / "build" / "clips"))  # the edited beat's old clip went
 
 
-def test_a_build_waits_for_a_reader_before_it_commits(talk):
+def test_a_build_waits_for_a_reader_before_it_commits(prebuilt):
     import fcntl
 
-    root = talk("edge")
-    ok(build(root))
+    root = prebuilt("edge")
     before = index(root)
     edit(root / "chapters" / "text.py", 'Text("Edge"', 'Text("Edges"')
     fd = os.open(root / "build" / ".clips.lock", os.O_RDWR | os.O_CREAT)
@@ -257,9 +250,8 @@ def test_default_width_reads_idle_cores_and_available_ram(talk):
     assert f"pass-1 width: {want} (idle" in r.stdout
 
 
-def test_engine_edits_outside_clip_py_render_nothing_and_clip_py_renders_everything(talk, tmp_path):
-    root = talk("edge")
-    ok(build(root))
+def test_engine_edits_outside_clip_py_render_nothing_and_clip_py_renders_everything(prebuilt, tmp_path):
+    root = prebuilt("edge")
     pkg = tmp_path / "engine"
     shutil.copytree(
         REPO / "manim_presentations", pkg / "manim_presentations", ignore=shutil.ignore_patterns("__pycache__")
@@ -298,9 +290,8 @@ def test_a_clip_whose_stream_does_not_match_the_declared_encoding_fails(talk, tm
     assert r.returncode == 1 and "stream check failed: pix_fmt yuv444p ≠ yuv420p" in r.stderr, r.stdout + r.stderr
 
 
-def test_a_cache_id_change_starts_a_new_cache(talk, tmp_path):
-    root = talk("edge")
-    ok(build(root))
+def test_a_cache_id_change_starts_a_new_cache(prebuilt, tmp_path):
+    root = prebuilt("edge")
     before = {d.name for d in (root / "build" / ".cache").iterdir()}
     pkg = tmp_path / "engine"
     shutil.copytree(

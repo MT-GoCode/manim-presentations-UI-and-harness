@@ -145,11 +145,9 @@ def test_legal_imports_and_identical_text_in_two_chapters_pass(talk, overlay):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_two_consecutive_builds_pass_the_allow_list(talk):
-    root = talk("edge")
-    for _ in range(2):
-        r = build(root)
-        assert r.returncode == 0, r.stdout + r.stderr
+def test_a_second_build_passes_the_allow_list(prebuilt):
+    r = build(prebuilt("edge"))  # over everything the first build left in the talk
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_workers_1_runs_one_pass1_child_at_a_time(talk):
