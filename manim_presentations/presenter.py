@@ -320,7 +320,7 @@ class Presenter(QMainWindow):
     def __init__(self, deck: d.Deck, start: p.Before | p.At | None):
         """`start` is `--from`'s Position, which wins over what a reconnected Audience reports; None adopts."""
         super().__init__()
-        self.deck, self.start = deck, start
+        self.deck, self.from_given = deck, start is not None
         self.root = deck.root
         self.script_path = self.root / "script.md"
         self.title_text = script.load(self.script_path).title
@@ -516,9 +516,9 @@ class Presenter(QMainWindow):
                 self.act(action)
 
     def adopt(self, last: p.NowCovered | p.NowAt | None) -> None:
-        """On each Hello: `--from` wins once; else keep what the Audience shows if it is this deck's; else show ours."""
-        if self.start is not None:  # once: a later Hello (a relaunch) adopts as usual
-            self.start = None
+        """On each Hello: with `--from`, show our position (set from it at startup); else keep what the Audience shows
+        if it is this deck's; else show ours. A later Hello is a relaunched Audience (`last` None): ours, either way."""
+        if self.from_given:
             self.go(self.position, "show")
             return
         match last:
