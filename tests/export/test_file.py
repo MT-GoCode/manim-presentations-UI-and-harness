@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -48,7 +49,8 @@ def test_every_frame_of_every_beat_is_the_builds_frame_at_the_asked_size(frames_
         assert (
             manifest(html)["beats"][1]["title"] == "Beat B </script> ends no script"
         )  # escaped, not closing the block
-        assert "<title>Frame codes &lt;&amp;&gt;</title>" in html
+        assert "<title>Frame codes &lt;&amp;&gt; &lt;!--&lt;script&gt;</title>" in html  # and the player still runs
+        assert stat.S_IMODE(out.stat().st_mode) & 0o044 == 0o044  # readable by others, like any file the user writes
         assert manifest(html)["transcript"] == "none"  # the default: no script text anywhere
         assert not any(line in everywhere(html) for line in NARRATION + NOTES)
         for i, (clip, beat) in enumerate(zip(clips(html), beats, strict=True), 1):
@@ -97,6 +99,7 @@ def test_a_stale_or_unbuilt_talk_is_refused(frames_talk, tmp_path):
     assert "run: mpres build" in r.stderr
     shutil.rmtree(frames_talk / "build")
     refused(export(frames_talk, tmp_path / "x.html"), "was never built")
+    assert list(tmp_path.glob(".*.tmp")) == []  # no partial page left beside --out
     assert not (tmp_path / "x.html").exists()
 
 
@@ -140,7 +143,7 @@ def test_a_failed_encode_leaves_no_file_and_no_scratch(frames_talk, tmp_path):
     out = tmp_path / "x.html"
     r = export(frames_talk, out)
     assert r.returncode == 1 and "InvalidDataError" in r.stderr and clip.name in r.stderr, r.stderr  # av's own error
-    assert not out.exists()
+    assert not out.exists() and list(tmp_path.glob(".*.tmp")) == []
     assert list((frames_talk / "build" / ".export").iterdir()) == []
 
 

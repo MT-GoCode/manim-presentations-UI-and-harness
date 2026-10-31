@@ -79,7 +79,9 @@ def test_build_then_shots_then_export_plays_the_template_talk_offline_to_its_end
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(out.as_uri())
-        front = "() => { const v = document.querySelector('#stage video[style*=\"z-index\"]'); return v && v.readyState >= 2 && v; }"
+        front = """() => { const s = document.getElementById('stage').getBoundingClientRect();
+            const v = document.elementFromPoint(s.x + s.width / 2, s.y + s.height / 2);  // the video the viewer sees
+            return v instanceof HTMLVideoElement && v.readyState >= 2 && v; }"""
         page.wait_for_function(front)
         for _ in beats:  # every Next raises a new, decodable video, until the last beat plays
             old = page.evaluate_handle(front)

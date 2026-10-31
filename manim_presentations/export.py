@@ -78,6 +78,9 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
     # Beside --out (os.replace needs one filesystem), and this run's own: two exports to one --out never share it.
     fd, name = tempfile.mkstemp(dir=out.parent, prefix=f".{out.name}.", suffix=".tmp")
     os.close(fd)  # the name is reserved; the page is written to it later
+    umask = os.umask(0)
+    os.umask(umask)
+    os.chmod(name, 0o666 & ~umask)  # the mode a plain open() gives, not mkstemp's owner-only 0600
     partial = Path(name)
     try:
         with tempfile.TemporaryDirectory(dir=layout.export_tmp) as scratch:  # removed however this ends
@@ -123,7 +126,7 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
                     for b in deck.beats
                 ],
             }
-            safe = json.dumps(manifest).replace("</", "<\\/")  # no string in it can close the script element
+            safe = json.dumps(manifest).replace("<", "\\u003c")  # no "<" at all: no text in it can open or close a tag
             page_html = PLAYER.read_text(encoding="utf-8").replace(TITLE, html.escape(talk.title))
             head, tail = page_html.split(MANIFEST)
             with partial.open("w", encoding="utf-8") as page:  # streamed: no long talk in memory at once
