@@ -186,6 +186,9 @@ def test_a_join_that_loses_a_frame_fails_naming_the_beat(talk, tmp_path):
 def test_pass1_width_comes_from_the_previous_builds_own_peaks(prebuilt):
     root = prebuilt("edge")
     peaks = index(root)["chapters"]
+    for chapter in ("text", "motion"):  # two chapters' pass 1 runs again (an unchanged chapter is reused)
+        path = root / "chapters" / f"{chapter}.py"
+        path.write_text(path.read_text() + "\n")
     r = ok(build(root, workers=None))
     m = re.search(r"machine: phase=pass-1 \S+ \S+ per_job_cores=(\S+) per_job_ram=(\d+)", r.stdout)
     assert m, r.stdout

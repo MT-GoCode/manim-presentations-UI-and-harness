@@ -26,7 +26,7 @@ def test_each_chapter_gets_a_private_copy_of_the_cache(tmp_path):
     (shared / "text").mkdir(parents=True)
     (shared / "text" / "entry.svg").write_text("<svg/>")
     script = parse("T\n\n# a\n\n## x\n\n# b\n\n## y\n")
-    jobs = pass1_jobs(layout, script, SETTINGS, shared)
+    jobs = pass1_jobs(layout, list(script.chapters), SETTINGS, shared)
     caches = [Path(j.args[4]) for j in jobs]
     assert len(set(caches)) == 2
     for c in caches:
