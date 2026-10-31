@@ -3,16 +3,19 @@ build/... path. It also defines the talk file set, the files whose bytes can cha
 
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import secrets
 import shutil
 from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from manim_presentations import script
 from manim_presentations.records import BeatKind
 
 EXCLUDED_DIRS = frozenset({"build", "__pycache__"})
@@ -253,3 +256,102 @@ class Layout:
         os.write(fd, str(os.getpid()).encode())
         os.set_inheritable(fd, True)
         return fd
+
+    @property
+    def export_tmp(self) -> Path:
+        """Scratch for `mpres export`'s re-encodes, outside .media, so a concurrent build's wipe never touches it."""
+        return self.build / ".export"
+
+
+def file_hashes(layout: Layout) -> dict[str, str]:
+    return {str(p): hashlib.sha256((layout.root / p).read_bytes()).hexdigest() for p in layout.talk_files()}
+
+
+class IncompatibleBuild(Exception):
+    """No build this engine can read: `mpres build <talk>` makes one (and always succeeds at it)."""
+
+
+class Stale(Exception):
+    """The talk changed since its build; the message names what changed and the command to run."""
+
+
+@dataclass(frozen=True)
+class BuiltBeat:
+    chapter: str
+    slug: str
+    title: str | None
+    kind: BeatKind
+    clip: Path
+    first_png: Path
+    last_png: Path
+    frames: int
+
+
+@dataclass(frozen=True)
+class Deck:
+    """The built talk: its beats in order, the render settings its clips were made with, and what changed since."""
+
+    root: Path
+    build_id: str
+    render: Render
+    beats: tuple[BuiltBeat, ...]
+    stale: tuple[str, ...]  # talk files whose bytes differ from the build's, or that were added or removed
+    structure_mismatch: bool  # script.md's chapters, beats or titles differ from the build's
+
+    @classmethod
+    def open(cls, root: Path) -> "Deck":
+        layout = Layout(root)
+        previous = layout.previous()
+        if isinstance(previous, NoPrevious):
+            raise IncompatibleBuild(why_not(previous, root))
+        index = previous.index
+        beats = tuple(
+            BuiltBeat(
+                chapter=b.chapter,
+                slug=b.slug,
+                title=b.title,
+                kind=b.kind,
+                clip=layout.clip(b.clip),
+                first_png=layout.build / b.first_png,
+                last_png=layout.build / b.last_png,
+                frames=b.frames,
+            )
+            for b in index.beats
+        )
+        missing = [str(p) for b in beats for p in (b.clip, b.first_png, b.last_png) if not p.exists()]
+        if missing:
+            raise IncompatibleBuild(f"{root}: the build lost {', '.join(missing)}; run: mpres build {root}")
+        now = file_hashes(layout)
+        stale = tuple(sorted(p for p in now.keys() | index.files.keys() if now.get(p) != index.files.get(p)))
+        return cls(
+            root=root,
+            build_id=index.build_id,
+            render=index.render,
+            beats=beats,
+            stale=stale,
+            structure_mismatch=structure_mismatch(root, index),
+        )
+
+
+def why_not(none: NoPrevious, root: Path) -> str:
+    match none.reason:
+        case Absent():
+            return f"{root} was never built; run: mpres build {root}"
+        case SchemaMismatch(old=old, new=new):
+            return (
+                f"{root} was built by another engine version (index schema {old}, this engine reads {new}); "
+                f"run: mpres build {root}"
+            )
+
+
+def structure_mismatch(root: Path, index: Index) -> bool:
+    """script.md's chapters, beats and titles against the build's. The one comparison: the CLI refuses on it, and the
+    Presenter's script.md watcher shows it."""
+    return script.load(root / "script.md").structure != index.structure
+
+
+def require_fresh(deck: Deck) -> None:
+    """For a fresh start (shots, export, a present with no live Audience): refuse a build the talk has moved past."""
+    if deck.stale or deck.structure_mismatch:
+        changed = [*deck.stale, *(["script.md headings"] if deck.structure_mismatch else [])]
+        raise Stale(f"{deck.root} changed since its build ({', '.join(changed)}); run: mpres build {deck.root}")

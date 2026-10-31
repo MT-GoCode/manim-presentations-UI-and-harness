@@ -35,14 +35,41 @@ def positive(text: str) -> int:
     return n
 
 
+def run_build(root: Path, args: argparse.Namespace) -> int:
+    from manim_presentations.build import BuildError, build
+
+    try:
+        return build(root, args.workers)
+    except BuildError as e:
+        print("\n".join(e.lines), file=sys.stderr)
+        return e.code
+
+
+def run_shots(root: Path, args: argparse.Namespace) -> int:
+    from manim_presentations.deck import IncompatibleBuild, Stale
+    from manim_presentations.headroom import TooBig
+    from manim_presentations.shots import ShotsError, shots
+
+    try:
+        return shots(root, args.out and Path(args.out).expanduser().resolve(), args.workers)
+    except (IncompatibleBuild, Stale, ShotsError, TooBig) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mpres", description="Build, present, screenshot and export Manim talks.")
     sub = p.add_subparsers(dest="command", metavar="command")
+    workers = "run exactly N jobs at once (default: 75%% of free headroom)"
     b = sub.add_parser("build", help="check the talk and render what changed")
     b.add_argument("talk", help="path to a <name>.manim-presentation folder")
-    b.add_argument(
-        "--workers", type=positive, metavar="N", help="run exactly N jobs at once (default: 75%% of free headroom)"
-    )
+    b.add_argument("--workers", type=positive, metavar="N", help=workers)
+    b.set_defaults(run=run_build)
+    s = sub.add_parser("shots", help="first, middle and last frame of every beat, and a contact sheet per chapter")
+    s.add_argument("talk", help="path to a <name>.manim-presentation folder")
+    s.add_argument("--out", metavar="DIR", help="output folder (default: /tmp/mpres-shots/<talk>-<hash>/)")
+    s.add_argument("--workers", type=positive, metavar="N", help=workers)
+    s.set_defaults(run=run_shots)
     return p
 
 
@@ -57,15 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 2
     os.chdir(root)  # the build parent imports Manim, which reads ./manim.cfg; the boundary proved there is none here
-    if args.command == "build":
-        from manim_presentations.build import BuildError, build
-
-        try:
-            return build(root, args.workers)
-        except BuildError as e:
-            print("\n".join(e.lines), file=sys.stderr)
-            return e.code
-    raise AssertionError(args.command)
+    return args.run(root, args)
 
 
 if __name__ == "__main__":

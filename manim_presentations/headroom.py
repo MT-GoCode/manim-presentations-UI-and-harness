@@ -1,6 +1,7 @@
 """How many jobs fit: up to 75% of the CPU and RAM free when a phase starts (Minh's rule), from measured per-job peaks.
 Callers route on the tag: Width(n), or RamExceeded when one job alone does not fit in 75% of free RAM."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import floor
 
@@ -49,3 +50,35 @@ def width(h: Headroom, per_job_cores: float, per_job_ram: int, jobs: int) -> Wid
 def ram_only(available: int, per_job_ram: int) -> Width | RamExceeded:
     """One job: only RAM can refuse it, and RAM is read instantly, so no core count is ever sampled for it."""
     return Width(1) if FRACTION * available >= per_job_ram else RamExceeded(per_job=per_job_ram, available=available)
+
+
+class TooBig(Exception):
+    """One job alone needs more than 75% of the free RAM; only an explicit --workers runs it anyway."""
+
+
+def choose(phase: str, workers: int | None, jobs: int, cores: float, ram: int, say: Callable[[str], None]) -> int:
+    """`--workers N` exactly, or 75% of free headroom for jobs of the given measured size, printed with its inputs (a
+    human line and one exact machine line for tests to parse)."""
+    estimate = f"{ram / 2**30:.2f} GB per job est"
+    if workers is not None:
+        say(f"{phase} width: {workers} (--workers) · {estimate}")
+        return workers
+    if jobs == 1:
+        tagged, label = ram_only(psutil.virtual_memory().available, ram), "1 job"
+    else:
+        h = sample(MIN_SAMPLE_WINDOW)
+        tagged = width(h, cores, ram, jobs)
+        label = f"idle {h.idle_cores:.1f} cores, {h.available_ram / 2**30:.0f} GB free"
+        say(
+            f"machine: phase={phase} idle_cores={h.idle_cores!r} available_ram={h.available_ram} "
+            f"per_job_cores={cores!r} per_job_ram={ram} jobs={jobs}"
+        )
+    match tagged:
+        case Width(n):
+            say(f"{phase} width: {n} ({label}) · {estimate}")
+            return n
+        case RamExceeded(per_job, available):
+            raise TooBig(
+                f"one {phase} job needs {per_job / 2**30:.1f} GB, more than 75% of the "
+                f"{available / 2**30:.1f} GB free; pass --workers 1 to run it anyway"
+            )

@@ -5,6 +5,15 @@ from pathlib import Path
 
 import av
 
+# P4: one decode job (open a clip, decode to one frame, write a PNG) uses 1 core and ≈ 55 MiB + 22 MiB per source
+# megapixel (58 / 99 / 218 MiB measured at 480×270 / 1920×1080 / 3456×2168).
+DECODE_CORES = 1.0
+MiB = 2**20
+
+
+def decode_ram(megapixels: float) -> int:
+    return int((55 + 22 * megapixels) * MiB)
+
 
 def still_at(clip: Path, index: int, out: Path) -> None:
     """Write frame `index` (0-based, in presentation order) of `clip` to `out`, atomically."""

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, TEST_WORKERS_WIDE
 
-from manim_presentations.deck import Layout
+from manim_presentations.deck import Deck, Layout
 
 
 def build(root, workers=TEST_WORKERS, env=None, cwd=None):
@@ -104,6 +104,7 @@ def test_an_edit_during_a_build_does_not_reach_its_clips(talk, tmp_path):
     out = p.communicate(timeout=SUBPROCESS_TIMEOUT)[0]
     assert p.returncode == 0, out
     assert clip_of(root, "words").read_bytes() == clip_of(reference, "words").read_bytes()
+    assert Deck.open(root).stale == ("chapters/text.py",)  # and the next look at the deck names the edit
 
 
 def test_workers_write_no_bytecode(talk, tmp_path):

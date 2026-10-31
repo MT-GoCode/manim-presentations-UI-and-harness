@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import psutil
 
 from manim_presentations import clip, geometry, headroom, schedule, stills
 from manim_presentations.deck import (
@@ -52,18 +51,12 @@ PASS1_CORES = 0.93
 PASS1_RAM = 246 * MiB
 WORKER_CORES = 1.3  # P2: one worker (tee + threads=1 encode) at 960×540 to 3456×2168, 1.15–1.3 cores
 STILLS_HASH = hashlib.sha256(Path(stills.__file__).read_bytes()).hexdigest()[:12]
-# P4: one stills-decode job is 1 core and ≈ 55 MiB + 22 MiB per source megapixel.
-DECODE_CORES = 1.0
 
 
 def worker_overhead(megapixels: float) -> int:
     """P2: a worker's RSS above its chapter's pass-1 peak (tee canvas + encoder), 70 MiB + 96 MiB per megapixel; the
     line through the 0.52 and 7.49 MP points over-estimates the 2.07 MP one, the safe side."""
     return int((70 + 96 * megapixels) * MiB)
-
-
-def decode_ram(megapixels: float) -> int:
-    return int((55 + 22 * megapixels) * MiB)
 
 
 class BuildError(Exception):
@@ -233,34 +226,10 @@ def pairing(script: Script, records: list[ChapterRecord]) -> list[Finding]:
 
 
 def width_for(phase: str, workers: int | None, jobs: int, cores: float, ram: int) -> int:
-    """`--workers N` exactly, or 75% of free headroom for jobs of the given measured size, printed with its inputs (a
-    human line and one exact machine line)."""
-    estimate = f"{ram / 2**30:.2f} GB per job est"
-    if workers is not None:
-        say(f"{phase} width: {workers} (--workers) · {estimate}")
-        return workers
-    if jobs == 1:
-        tagged, label = headroom.ram_only(psutil.virtual_memory().available, ram), "1 job"
-    else:
-        h = headroom.sample(headroom.MIN_SAMPLE_WINDOW)
-        tagged = headroom.width(h, cores, ram, jobs)
-        label = f"idle {h.idle_cores:.1f} cores, {h.available_ram / 2**30:.0f} GB free"
-        say(
-            f"machine: phase={phase} idle_cores={h.idle_cores!r} available_ram={h.available_ram} "
-            f"per_job_cores={cores!r} per_job_ram={ram} jobs={jobs}"
-        )
-    match tagged:
-        case headroom.Width(n):
-            say(f"{phase} width: {n} ({label}) · {estimate}")
-            return n
-        case headroom.RamExceeded(per_job, available):
-            raise BuildError(
-                1,
-                [
-                    f"one {phase} job needs {per_job / 2**30:.1f} GB, more than 75% of the "
-                    f"{available / 2**30:.1f} GB free; pass --workers 1 to run it anyway"
-                ],
-            )
+    try:
+        return headroom.choose(phase, workers, jobs, cores, ram, say)
+    except headroom.TooBig as e:
+        raise BuildError(1, [str(e)]) from None
 
 
 def merge_caches(layout: Layout, shared: Path, chapters: list[str]) -> int:
@@ -459,7 +428,7 @@ def build(talk: Path, workers: int | None) -> int:
     if render_width is not None:
         join_width = render_width
     elif missing_stills:
-        join_width = width_for("stills", workers, missing_stills, DECODE_CORES, decode_ram(megapixels))
+        join_width = width_for("stills", workers, missing_stills, stills.DECODE_CORES, stills.decode_ram(megapixels))
     else:
         join_width = 1  # nothing to join or extract: no pool, no sample
 
