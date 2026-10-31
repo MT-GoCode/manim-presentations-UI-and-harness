@@ -12,8 +12,8 @@ it as one HTML page.
   checks the browsers the export tests use.
   - The first run took 65 s on an 18-core Apple M5 Pro whose Homebrew already had cairo and pkg-config; installing those adds Homebrew's own time. It prints a line per phase. **Run it detached or with a long timeout**:
     it outlasts an agent shell's default command timeout.
-- Check the install with `mpres --help`. Setup has already built a copy of `examples/hello` in `/tmp`, so no `build/`
-  folder appears in the repo.
+- Check the install with `mpres --help`. Setup checks the engine by building a throwaway copy of `examples/hello`, so
+  no `build/` folder appears in the repo.
 - `mpres` is exactly `uv run -q --project <repo> mpres`. When `~/.local/bin` is not on your shell's `PATH` (a shell
   that has not reloaded its rc file), use the literal form; `uv` itself is in `/opt/homebrew/bin`:
 

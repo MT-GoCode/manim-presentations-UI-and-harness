@@ -96,7 +96,7 @@ def commit_from(root, other):
     build_dir, other_build = Layout(root).build, Layout(other).build
     for path in other_build.rglob("*"):
         rel = path.relative_to(other_build)
-        if path.is_file() and rel.parts[0] in ("clips", "stills"):
+        if path.is_file() and rel.parts[0] == "clips":  # stills live under clips/ too
             (build_dir / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, build_dir / rel)
     for rel in ("chapters", "helpers"):
@@ -232,6 +232,33 @@ def test_a_build_that_cannot_be_opened_is_red_and_the_next_one_is_adopted(talk, 
     assert window.deck.build_id == Layout(c).build_id()
 
 
+def test_a_clean_rebuild_clears_the_stale_amber_and_the_headings_red(talk, open_, qtbot):
+    edit(talk / "chapters" / "opening.py", "One idea per beat", "One idea per breath")
+    edit(talk / "script.md", "## the-idea: The idea", "## the-idea: The one idea")
+    fake = FakeAudience(qtbot, talk)  # a live Audience: a reconnect adopts the stale deck instead of refusing it
+    window = open_(talk)
+    fake.hello()
+    fake.next()
+    assert "changed since the build" in window.status.text() and "headings changed" in window.status.text()
+    build(talk)
+    settled(qtbot, window, talk)
+    qtbot.waitUntil(lambda: "changed since the build" not in window.status.text(), timeout=WAIT_MS)
+    assert "headings changed" not in window.status.text()
+
+
+def test_a_build_folder_removed_and_made_again_is_still_watched(talk, open_, qtbot, rebuilt):
+    other = rebuilt(lambda r: edit(r / "chapters" / "working.py", "Circle(1.0", "Circle(1.1"))
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello()
+    fake.next()
+    shutil.rmtree(Layout(talk).build)
+    qtbot.wait(QUIET_MS)  # the folder event for the removal lands
+    shutil.copytree(Layout(other).build, Layout(talk).build, ignore=shutil.ignore_patterns(".presenter*", ".media"))
+    settled(qtbot, window, talk)
+    assert window.deck.build_id == Layout(other).build_id()
+
+
 def test_a_chapter_edited_mid_build_is_adopted_as_stale(talk, open_, qtbot):
     window = open_(talk)
     qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
@@ -291,11 +318,11 @@ class Present:
         cmd = [str(REPO / "bin" / "mpres"), "present", str(talk)]
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         assert self.proc.stdout is not None
-        for line in self.proc.stdout:
-            if line.startswith("present: Audience connected"):
-                break
-        else:
-            raise AssertionError(f"present exited {self.proc.wait()} before the Audience connected")
+        stuck = threading.Timer(LAUNCH_MS / 1000, self.proc.kill)  # a present that never connects fails, not hangs
+        stuck.start()
+        ready = any(line.startswith("present: Audience connected") for line in self.proc.stdout)
+        stuck.cancel()
+        assert ready, f"present exited {self.proc.wait()} before the Audience connected"
         self.python = int(subprocess.check_output(["pgrep", "-P", str(self.proc.pid)], text=True).split()[0])
 
     def signal(self, number):

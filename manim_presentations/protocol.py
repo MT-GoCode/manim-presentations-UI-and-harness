@@ -33,15 +33,18 @@ Action = Literal["next", "previous", "replay"]
 AUDIENCE_CODE = hashlib.sha256(
     Path(__file__).with_name("audience.py").read_bytes() + Path(__file__).read_bytes()
 ).hexdigest()
-"""What an Audience does with each message: `Hello.protocol` carries the running Audience's value, and a Presenter
-whose own value differs (an Audience that survived a `git pull`) relaunches it."""
+"""What an Audience does with each message. `Hello.protocol` carries the running Audience's value. When it differs
+from the Presenter's own, an Audience the Presenter adopted (one that survived a `git pull`) is quit and relaunched;
+one the Presenter launched itself means the engine on disk changed under it, which stops red ("restart mpres
+present")."""
 
 KEYS: dict[str, Action] = {"Up": "previous", "PageUp": "previous", "Down": "next", "PageDown": "next", "R": "replay"}
 """Qt key names (`Qt.Key.Key_<name>`) to actions. PageUp/PageDown are what presentation clickers send."""
 
 CHORD = ("ControlModifier", "AltModifier", "MetaModifier")
 """Qt modifier names (`Qt.KeyboardModifier.<name>`): a key held with any of them is a shortcut (Cmd+R, Cmd+W), never
-navigation. Shift and the keypad flag (arrows on macOS) do not count."""
+navigation, in the Presenter, the Audience and the exported player. Shift and the keypad flag (arrows on macOS) do not
+count."""
 
 
 class Moved(_Frozen):

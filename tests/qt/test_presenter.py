@@ -557,3 +557,35 @@ def test_moving_while_the_script_is_missing_shows_red(talk, open_, qtbot):
     (talk / "script.md").unlink()
     window.go(p.At(slug="the-idea"), "show")
     assert "script.md is missing" in window.status.text() and red(window)
+
+
+def test_a_reconnect_to_another_builds_cover_is_not_adopted(talk, open_, qtbot):
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello(p.NowCovered(position=p.Before(), clip="/another/build/clip.mp4"))
+    assert fake.next() == p.Cover(position=p.Before(), clip=clip(talk, "title-card"))  # shown again, from this deck
+    assert window.now is None
+
+
+def test_a_timeline_click_shows_the_beat_as_last_seen(talk, open_, qtbot):
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello()
+    fake.next()
+    item = window.items["build-up"]
+    QTest.mouseClick(
+        window.timeline.viewport(), Qt.MouseButton.LeftButton, pos=window.timeline.visualItemRect(item).center()
+    )
+    assert fake.next() == p.Hold(position=p.At(slug="build-up"), clip=clip(talk, "build-up"))  # never replayed
+
+
+def test_from_wins_only_once(talk, open_, qtbot):
+    """A relaunched Audience says Hello again: it gets the current position, not the --from one."""
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk, "build-up")
+    fake.hello()
+    assert fake.next() == p.Hold(position=p.At(slug="working-card"), clip=clip(talk, "working-card"))
+    window.go(p.At(slug="keeps-going"), "show")
+    fake.next()
+    fake.hello()  # as a relaunched Audience would
+    assert fake.next() == p.Loop(position=p.At(slug="keeps-going"), clip=clip(talk, "keeps-going"))

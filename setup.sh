@@ -3,7 +3,7 @@
 #   ./setup.sh          install
 #   ./setup.sh --dev    also the test browsers (Playwright WebKit; Google Chrome must be installed)
 set -euo pipefail
-echo "setup: the first run takes several minutes (TinyTeX download). Agents: run it detached or with a long timeout;"
+echo "setup: the first run takes a minute or more (TinyTeX download). Agents: run it detached or with a long timeout;"
 echo "       re-running is safe and fast."
 cd "$(dirname "$0")"
 REPO=$PWD
