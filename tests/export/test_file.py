@@ -27,6 +27,12 @@ def index(root: Path) -> dict:
     return json.loads((root / "build" / "index.json").read_text())
 
 
+def refused(r: subprocess.CompletedProcess[str], message: str) -> None:
+    """Refused through the CLI's routing (exit 1, one `error:` line), not by an unhandled exception."""
+    assert r.returncode == 1 and r.stderr.startswith("error: ") and "Traceback" not in r.stderr, r.stderr
+    assert message in r.stderr, r.stderr
+
+
 def test_every_frame_of_every_beat_is_the_builds_frame_at_the_asked_size(frames_talk, tmp_path):
     for flags, (w, h) in (((), (480, 270)), (("--height", "180"), (320, 180))):
         out = tmp_path / f"{h}.html"
@@ -35,16 +41,20 @@ def test_every_frame_of_every_beat_is_the_builds_frame_at_the_asked_size(frames_
         assert f"export: height {h} · width {w} · crf 28" in r.stdout
         html = out.read_text()
         beats = index(frames_talk)["beats"]
-        assert [b["slug"] for b in manifest(html)["beats"]] == [b["slug"] for b in beats]
+        assert [(b["slug"], b["title"]) for b in manifest(html)["beats"]] == [
+            (b["slug"], b["title"] or b["slug"]) for b in beats
+        ]
+        assert (
+            manifest(html)["beats"][1]["title"] == "Beat B </script> ends no script"
+        )  # escaped, not closing the block
         for i, (clip, beat) in enumerate(zip(clips(html), beats, strict=True), 1):
             facts, codes = decoded(clip)
-            assert facts == (w, h, 30)
+            assert facts == (w, h, index(frames_talk)["render"]["fps"])
             assert codes == [i << 8 | k for k in range(beat["frames"])], beat["slug"]
 
 
 def test_height_defaults_to_the_source_and_refuses_above_it(frames_talk, tmp_path):
-    r = export(frames_talk, tmp_path / "a.html", "--height", "272")
-    assert r.returncode == 1 and "--height 272 is above the source height 270" in r.stderr
+    refused(export(frames_talk, tmp_path / "a.html", "--height", "272"), "--height 272 is above the source height 270")
     assert not (tmp_path / "a.html").exists()
     assert export(frames_talk, tmp_path / "b.html", "--height", "270").returncode == 0
 
@@ -73,10 +83,10 @@ def test_a_stale_or_unbuilt_talk_is_refused(frames_talk, tmp_path):
     chapter = frames_talk / "chapters" / "one.py"
     chapter.write_text(chapter.read_text() + "\n")
     r = export(frames_talk, tmp_path / "x.html")
-    assert r.returncode == 1 and "chapters/one.py" in r.stderr and "run: mpres build" in r.stderr
+    refused(r, "chapters/one.py")
+    assert "run: mpres build" in r.stderr
     shutil.rmtree(frames_talk / "build")
-    r = export(frames_talk, tmp_path / "x.html")
-    assert r.returncode == 1 and "was never built" in r.stderr
+    refused(export(frames_talk, tmp_path / "x.html"), "was never built")
     assert not (tmp_path / "x.html").exists()
 
 
@@ -108,8 +118,7 @@ def engine_copy(tmp_path: Path, old: str, new: str) -> dict[str, str]:
 def test_an_encode_job_too_big_for_free_ram_is_refused_unless_workers_is_given(frames_talk, tmp_path):
     env = engine_copy(tmp_path, "* out_mp) * MiB)", "* out_mp) * MiB * 10**6)")
     out = tmp_path / "x.html"
-    r = run("export", str(frames_talk), "--out", str(out), env=env)
-    assert r.returncode == 1 and "pass --workers 1 to run it anyway" in r.stderr, r.stdout + r.stderr
+    refused(run("export", str(frames_talk), "--out", str(out), env=env), "pass --workers 1 to run it anyway")
     assert not out.exists()
     r = run("export", str(frames_talk), "--out", str(out), "--workers", "1", env=env)
     assert r.returncode == 0 and out.exists(), r.stderr
@@ -120,9 +129,16 @@ def test_a_failed_encode_leaves_no_file_and_no_scratch(frames_talk, tmp_path):
     clip.write_bytes(clip.read_bytes()[:2000])
     out = tmp_path / "x.html"
     r = export(frames_talk, out)
-    assert r.returncode != 0
-    assert not out.exists() and not list(out.parent.glob(".*.tmp"))
+    assert r.returncode == 1 and "InvalidDataError" in r.stderr and clip.name in r.stderr, r.stderr  # av's own error
+    assert not out.exists()
     assert list((frames_talk / "build" / ".export").iterdir()) == []
+
+
+def test_an_out_path_in_a_missing_folder_or_naming_a_folder_is_refused_before_any_work(frames_talk, tmp_path):
+    for out, message in ((tmp_path / "nope" / "x.html", "no such folder"), (tmp_path, "is a folder")):
+        r = export(frames_talk, out)
+        assert r.returncode == 2 and message in r.stderr and "export:" not in r.stdout, r.stderr
+    assert not (frames_talk / "build" / ".export").exists()
 
 
 def lines_until(proc: subprocess.Popen[str], text: str) -> bool:
@@ -141,9 +157,13 @@ def test_a_build_during_export_renders_waits_at_commit_then_commits(frames_talk,
     try:
         assert lines_until(exporting, "export width:")  # printed inside the clips lock
         exporting.send_signal(signal.SIGSTOP)
+        (scratch,) = (frames_talk / "build" / ".export").iterdir()  # its own folder, outside the build's .media
+        assert scratch.is_dir()
         before = (frames_talk / "build" / "index.json").read_bytes()
         chapter = frames_talk / "chapters" / "one.py"
-        chapter.write_text(chapter.read_text().replace("RIGHT * 2), run_time=1)", "RIGHT * 3), run_time=1)"))
+        text = chapter.read_text()
+        assert text.count("RIGHT * 2), run_time=1)") == 1
+        chapter.write_text(text.replace("RIGHT * 2), run_time=1)", "RIGHT * 3), run_time=1)"))
         building = subprocess.Popen([*cli, "build", str(frames_talk), "--workers", str(TEST_WORKERS)], **pipes)
         assert lines_until(building, "commit: waiting for shots/export to finish")
         assert (frames_talk / "build" / "index.json").read_bytes() == before

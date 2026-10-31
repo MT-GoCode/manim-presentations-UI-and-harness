@@ -11,4 +11,4 @@ def construct(talk):
 
     code.start(2)
     talk.beat("b")
-    code.play(dot.animate.shift(RIGHT * 2), run_time=1.5)
+    code.play(dot.animate.shift(RIGHT * 2), run_time=1.2)

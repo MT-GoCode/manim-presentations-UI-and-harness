@@ -5,6 +5,7 @@ a clip's fingerprint, and embedded as base64 blocks the player turns into Blob U
 import base64
 import functools
 import json
+import multiprocessing
 import os
 import shutil
 import tempfile
@@ -24,8 +25,15 @@ ENCODE_CORES = 1.35  # P4: the largest CPU/wall of 1,539 threads=1 jobs (median 
 MiB = 2**20
 PLAYER = Path(__file__).with_name("player.html")
 MANIFEST = "<!--manifest-->"  # where the page's data goes in player.html
-# protocol.KEYS names Qt keys; the page matches KeyboardEvent.code, the physical key, as Qt's key codes are.
-DOM_CODE = {"Up": "ArrowUp", "Down": "ArrowDown", "PageUp": "PageUp", "PageDown": "PageDown", "R": "KeyR"}
+# protocol.KEYS names Qt keys, which are logical (layout-mapped) keys; so are KeyboardEvent.key values. Qt's Key_R is
+# R with or without Shift.
+DOM_KEY = {
+    "Up": ("ArrowUp",),
+    "Down": ("ArrowDown",),
+    "PageUp": ("PageUp",),
+    "PageDown": ("PageDown",),
+    "R": ("r", "R"),
+}
 
 say = functools.partial(print, flush=True)  # tests block on these lines from a pipe
 
@@ -51,7 +59,6 @@ def encode(src: Path, dst: Path, width: int, height: int, crf: int, fps: int) ->
         vout.codec_context.options = {"crf": str(crf), "threads": "1"}
         for f in inp.decode(vin):
             g = f.reformat(width=width, height=height, format="yuv420p", interpolation="BICUBIC")
-            g.pts, g.time_base = f.pts, f.time_base
             out.mux(vout.encode(g))
         out.mux(vout.encode())
 
@@ -60,6 +67,7 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, workers: 
     layout = Layout(root)
     layout.export_tmp.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(dir=layout.export_tmp))
+    partial = out.with_name(f".{out.name}.tmp")  # beside --out: os.replace needs one filesystem
     try:
         with layout.clips_shared():  # no commit can collect the clips between opening the deck and reading them
             deck = Deck.open(root)
@@ -75,14 +83,14 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, workers: 
             ram = encode_ram(r.pixel_width * r.pixel_height / 1e6, w * h / 1e6)
             n = headroom.choose("export", workers, len(deck.beats), ENCODE_CORES, ram, say)
             clips = [tmp / f"{i}.mp4" for i in range(len(deck.beats))]
-            with ProcessPoolExecutor(n) as pool:
+            with ProcessPoolExecutor(n, mp_context=multiprocessing.get_context("spawn")) as pool:  # no forked locks
                 job = functools.partial(encode, width=w, height=h, crf=crf, fps=r.fps)
                 list(pool.map(job, [b.clip for b in deck.beats], clips))
         manifest = {
             "title": talk.title,
             "fps": r.fps,
             "chapters": {c.slug: c.title or c.slug for c in talk.chapters},
-            "keys": {DOM_CODE[k]: a for k, a in protocol.KEYS.items()},
+            "keys": {key: a for q, a in protocol.KEYS.items() for key in DOM_KEY[q]},
             "beats": [
                 {"chapter": b.chapter, "slug": b.slug, "title": b.title or b.slug, "kind": b.kind, "frames": b.frames}
                 for b in deck.beats
@@ -90,7 +98,6 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, workers: 
         }
         safe = json.dumps(manifest).replace("</", "<\\/")  # no string in it can close the script element
         head, tail = PLAYER.read_text(encoding="utf-8").split(MANIFEST)
-        partial = out.with_name(f".{out.name}.tmp")
         with partial.open("w", encoding="utf-8") as page:  # streamed: a long talk's clips never sit in memory at once
             page.write(f'{head}<script type="application/json" id="manifest">{safe}</script>\n')
             for i, c in enumerate(clips):
@@ -100,5 +107,6 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, workers: 
         os.replace(partial, out)
     finally:
         shutil.rmtree(tmp)
+        partial.unlink(missing_ok=True)
     say(f"exported {out} · {out.stat().st_size // 1024} KiB · {len(deck.beats)} beats")
     return 0

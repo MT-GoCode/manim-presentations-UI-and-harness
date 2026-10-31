@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 from conftest import TEST_WORKERS, mpres
-from frames import FRAMES
+from frames import FRAMES, PAGE_JS, Player
+from playwright.sync_api import sync_playwright
 
 
 @pytest.fixture(scope="session")
@@ -34,3 +35,57 @@ def frames_talk(built: Path, tmp_path: Path) -> Path:
     root = tmp_path / FRAMES.name
     shutil.copytree(built, root, symlinks=True)
     return root
+
+
+@pytest.fixture(scope="session")
+def page_file(built: Path) -> Path:
+    """The built frames talk exported once per session with the defaults; read-only for every test."""
+    out = built.parent / "frames.html"
+    with (built.parent / "export.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not out.exists():
+            r = mpres("export", str(built), "--out", str(out), "--workers", str(TEST_WORKERS))
+            assert r.returncode == 0, r.stdout + r.stderr
+    return out
+
+
+@pytest.fixture(scope="session")
+def playwright():
+    with sync_playwright() as pw:
+        yield pw
+
+
+@pytest.fixture(scope="session", params=["webkit", "chrome"])
+def browser(request: pytest.FixtureRequest, playwright):
+    """Headless WebKit, and the stock Chrome (it has the H.264 decoder bundled Chromium lacks)."""
+    b = playwright.webkit.launch() if request.param == "webkit" else playwright.chromium.launch(channel="chrome")
+    yield b
+    b.close()
+
+
+@pytest.fixture
+def player(browser, page_file: Path):
+    """The exported page, offline: every request that is not the file itself or a Blob is aborted and recorded, and
+    must not happen; neither may a page error."""
+    context = browser.new_context(viewport={"width": 960, "height": 600})
+    aborted: list[str] = []
+
+    def route(r) -> None:
+        if r.request.url.startswith(("file:", "blob:")):
+            r.continue_()
+        else:
+            aborted.append(r.request.url)
+            r.abort()
+
+    context.route("**/*", route)
+    context.add_init_script(PAGE_JS)
+    page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(page_file.as_uri())
+    page.evaluate("T.watch()")
+    p = Player(page, aborted)
+    p.settle(0, 0)  # Before: beat 0's first frame
+    yield p
+    context.close()
+    assert aborted == [] and errors == []

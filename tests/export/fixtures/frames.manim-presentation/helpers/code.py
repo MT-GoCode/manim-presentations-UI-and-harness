@@ -5,7 +5,7 @@ its period, so the loop closes)."""
 from manim import UP, WHITE, Rectangle, ValueTracker, VGroup, linear
 
 BITS = 12
-FPS = 30  # talk.toml's frame rate (the default)
+FPS = 25  # talk.toml's frame rate
 
 
 class FrameCode:

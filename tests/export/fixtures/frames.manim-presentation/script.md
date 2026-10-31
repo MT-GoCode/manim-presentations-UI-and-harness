@@ -8,7 +8,7 @@ Narration of beat A, spoken aloud.
 
 > Private note on beat A.
 
-## b: Beat B
+## b: Beat B </script> ends no script
 
 Narration of beat B, spoken aloud.
 

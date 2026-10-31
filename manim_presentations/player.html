@@ -1,14 +1,126 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>mpres export</title>
-<style>body{margin:0;background:#000}#stage{position:fixed;inset:0}video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}</style>
-</head><body><div id="stage"></div>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mpres export</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 15px/1.4 system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #stage { position: relative; flex: 1; min-height: 0; }
+  #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 8px; background: #111; }
+  #bar button { font: inherit; padding: 6px 14px; border: 1px solid #444; border-radius: 6px; background: #222; color: #eee; }
+  #bar #next { background: #2a5bd7; border-color: #2a5bd7; }
+  #bar select { font: inherit; flex: 1; min-width: 0; background: #222; color: #eee; border: 1px solid #444; padding: 5px; }
+  body.boundary #bar { box-shadow: inset 0 0 0 3px #d33; }
+</style></head>
+<body>
+<div id="stage"></div>
+<div id="bar">
+  <button id="previous" title="Previous (↑, PageUp)">▲ Previous</button>
+  <button id="next" title="Next (↓, PageDown)">▼ Next</button>
+  <button id="replay" title="Replay (R)">⟲ Replay</button>
+  <select id="jump" aria-label="Jump to a beat"></select>
+</div>
 <!--manifest-->
 <script>
-const M = JSON.parse(document.getElementById('manifest').textContent);
+"use strict";
+const M = JSON.parse(document.getElementById("manifest").textContent);
+const SLUGS = M.beats.map((b) => b.slug);
+const stage = document.getElementById("stage");
 document.title = M.title;
-const b = atob(document.getElementById('clip-0').textContent), u = new Uint8Array(b.length);
-for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
-const v = document.createElement('video');
-v.muted = true; v.playsInline = true; v.src = URL.createObjectURL(new Blob([u], {type: 'video/mp4'}));
-document.getElementById('stage').appendChild(v);
+
+// The Position model of protocol.step, kept equal to it by tests/position_table.json.
+function step(position, action, slugs) {
+  if (position.kind === "before") {
+    return action === "next" ? {kind: "moved", position: {kind: "at", slug: slugs[0]}} : {kind: "boundary"};
+  }
+  const i = slugs.indexOf(position.slug);
+  if (action === "next") return i + 1 < slugs.length ? {kind: "moved", position: {kind: "at", slug: slugs[i + 1]}} : {kind: "boundary"};
+  if (action === "previous") return {kind: "moved", position: i ? {kind: "at", slug: slugs[i - 1]} : {kind: "before"}};
+  return {kind: "moved", position};  // replay
+}
+
+// What a position shows after an action: Next and Replay play the beat; Previous and a jump show it as last seen
+// (its last frame, or its loop running); Before shows beat 0's first frame.
+function showFor(position, action) {
+  if (position.kind === "before") return {beat: 0, frame: 0, play: false};
+  const beat = SLUGS.indexOf(position.slug), b = M.beats[beat];
+  const played = action === "next" || action === "replay" || b.kind === "loop";
+  return {beat, frame: played ? 0 : b.frames - 1, play: played};
+}
+
+// Blob URLs exist only for the current beat and its neighbours: created on entering that window, revoked on leaving.
+const urls = new Map();
+function blobUrl(i) {
+  if (!urls.has(i)) {
+    const text = atob(document.getElementById("clip-" + i).textContent), bytes = new Uint8Array(text.length);
+    for (let k = 0; k < text.length; k++) bytes[k] = text.charCodeAt(k);
+    urls.set(i, URL.createObjectURL(new Blob([bytes], {type: "video/mp4"})));
+  }
+  return urls.get(i);
+}
+function keepWindow(c) {
+  for (let i = Math.max(0, c - 1); i <= Math.min(M.beats.length - 1, c + 1); i++) blobUrl(i);
+}
+function dropOutside(c) {
+  for (const [i, u] of urls) if (Math.abs(i - c) > 1) { URL.revokeObjectURL(u); urls.delete(i); }
+}
+
+// Every show is a fresh <video> under the front one: it loads, seeks paused to the middle of the wanted frame (an
+// exact pts can present the frame before it), and is raised on `seeked`, so the front video stays up until the new
+// frame is there. A fresh element because WebKit leaves the old frame on screen after the first paused seek of a
+// video that has played. A newer show makes an older one stale; a stale element is dropped, never raised.
+let front = null, shows = 0;
+function release(v) { v.pause(); v.removeAttribute("src"); v.load(); v.remove(); }
+function show({beat, frame, play}) {
+  const mine = ++shows, v = document.createElement("video");
+  keepWindow(beat);
+  v.muted = true; v.playsInline = true; v.preload = "auto"; v.loop = M.beats[beat].kind === "loop";
+  v.addEventListener("loadeddata", () => {
+    if (mine !== shows) return release(v);
+    v.addEventListener("seeked", () => {
+      if (mine !== shows) return release(v);
+      v.style.zIndex = 1;
+      if (front) release(front);
+      front = v;
+      dropOutside(beat);
+      if (play) v.play();
+    }, {once: true});
+    v.currentTime = (frame + 0.5) / M.fps;
+  }, {once: true});
+  v.addEventListener("error", () => { if (mine !== shows) release(v); else throw new Error("clip " + beat + " failed to load"); });
+  v.src = blobUrl(beat);
+  stage.prepend(v);
+}
+
+let position = {kind: "before"}, flashing = 0;
+function act(action, to) {
+  const r = to ? {kind: "moved", position: to} : step(position, action, SLUGS);
+  if (r.kind === "boundary") {
+    document.body.classList.add("boundary");
+    clearTimeout(flashing);
+    flashing = setTimeout(() => document.body.classList.remove("boundary"), 300);  // a visible blink, like the Presenter's
+    return;
+  }
+  position = r.position;
+  jump.value = position.kind === "at" ? position.slug : "";
+  show(showFor(position, action));
+}
+
+const jump = document.getElementById("jump");
+jump.append(Object.assign(new Option("Before the first beat", ""), {disabled: true}));  // shown at Before only
+for (const [slug, title] of Object.entries(M.chapters)) {
+  const group = document.createElement("optgroup");
+  group.label = title;
+  for (const b of M.beats) if (b.chapter === slug) group.append(new Option(b.title, b.slug));
+  jump.append(group);
+}
+jump.addEventListener("change", () => act("jump", {kind: "at", slug: jump.value}));
+for (const id of ["previous", "next", "replay"]) document.getElementById(id).addEventListener("click", () => act(id));
+document.addEventListener("keydown", (e) => {
+  const action = M.keys[e.key];
+  if (!action) return;
+  e.preventDefault();  // a focused jump list never also moves its own selection
+  if (!e.repeat) act(action);  // a held key or a repeating clicker advances once
+});
+show(showFor(position));
 </script></body></html>
