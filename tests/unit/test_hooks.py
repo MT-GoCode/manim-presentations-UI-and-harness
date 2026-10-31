@@ -320,3 +320,112 @@ def test_the_end_raster_leaves_out_what_a_play_removed():
         empty.play(FadeIn(Square().set_opacity(0)))
         blank = manim_hooks.canonical_raster(empty)
     assert np.array_equal(after, blank)
+
+
+@pytest.fixture
+def size_hooks(monkeypatch):
+    """The pass-1 size hooks, restored after the test (they patch Manim classes)."""
+    from manim import Mobject, Paragraph, Transform
+
+    for cls, name in ((Paragraph, "__init__"), (Transform, "clean_up_from_scene"), (Mobject, "become")):
+        monkeypatch.setattr(cls, name, getattr(cls, name))
+    manim_hooks.install_size_references()
+
+
+def played(build_scene):
+    clip.render_config(SETTINGS)
+    with tempconfig({"dry_run": True}):
+        s = Scene()
+        return build_scene(s)
+
+
+def test_a_transformed_text_is_sized_as_its_target(size_hooks):
+    from manim import Text, Transform
+
+    def run(s):
+        t = Text("go", font_size=16)
+        s.add(t)
+        s.play(Transform(t, Text("gone", font_size=48)))  # a different glyph set: height alone would mislead
+        return t
+
+    t = played(run)
+    assert manim_hooks.font_size(t) == pytest.approx(48)
+    assert t.font_size != pytest.approx(48)  # Manim's own reading is stale: the shadow is what makes this right
+
+
+def test_a_later_scale_stays_reflected(size_hooks):
+    from manim import Text, Transform
+
+    def run(s):
+        t = Text("go", font_size=16)
+        s.add(t)
+        s.play(Transform(t, Text("gone", font_size=50)))
+        s.play(t.animate.scale(0.5))
+        return t
+
+    assert manim_hooks.font_size(played(run)) == pytest.approx(25)
+
+
+def test_become_takes_the_targets_reference(size_hooks):
+    from manim import Text
+
+    def run(s):
+        t = Text("a", font_size=12)
+        t.become(Text("tall glyphs", font_size=44))
+        return t
+
+    assert manim_hooks.font_size(played(run)) == pytest.approx(44)
+
+
+def test_a_paragraph_is_sized_from_its_text(size_hooks):
+    from manim import Paragraph
+
+    p = Paragraph("one", "two lines", font_size=30)
+    assert manim_hooks.font_size(p) == pytest.approx(30)
+    p.scale(0.5)
+    assert manim_hooks.font_size(p) == pytest.approx(15)
+
+
+def test_text_transformed_into_a_non_text_slot_is_marked(size_hooks):
+    from manim import Text, Transform, VGroup
+
+    def run(s):
+        two = VGroup(Text("a", font_size=40), Text("b", font_size=40))
+        s.add(two)
+        s.play(Transform(two, VGroup(Text("x", font_size=40), Square(0.3))))  # text where the target has none
+        return two
+
+    assert getattr(played(run), "_mpres_size_mismatch", False)
+
+
+def test_replacement_transform_leaves_no_shadow(size_hooks):
+    from manim import ReplacementTransform, Text
+
+    def run(s):
+        a, b = Text("a", font_size=16), Text("b", font_size=48)
+        s.add(a)
+        s.play(ReplacementTransform(a, b))
+        return b
+
+    b = played(run)
+    assert not hasattr(b, "_mpres_ref") and manim_hooks.font_size(b) == pytest.approx(48)
+
+
+def test_the_shadow_changes_no_frame(monkeypatch):
+    """Observation only: a chapter that sets font_size after a Transform draws the same frames with the hook."""
+    from manim import Text, Transform
+
+    def scene(s):
+        t = Text("go", font_size=16)
+        s.add(t)
+        s.play(Transform(t, Text("gone", font_size=48)))
+        t.font_size = 36
+        s.play(t.animate.shift([1, 0, 0]))
+
+    without = digests(scene)
+    from manim import Mobject, Paragraph
+
+    for cls, name in ((Paragraph, "__init__"), (Transform, "clean_up_from_scene"), (Mobject, "become")):
+        monkeypatch.setattr(cls, name, getattr(cls, name))
+    manim_hooks.install_size_references()
+    assert digests(scene) == without

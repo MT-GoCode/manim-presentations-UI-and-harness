@@ -42,8 +42,18 @@ Edge cases
 
 ## cycle: Mixing Deluxe's queue pattern
 
-## waits: A loop between two waits
+## between-waits: A loop between two waits
 
 ## hand-closed: Closed by different objects
 
 ## ticking: A non-time updater that returns
+
+# sizes: Sizes after transforms
+
+## grows: A transform to a bigger size
+
+## clockwise: ClockwiseTransform
+
+## becomes: become
+
+## fades: FadeTransform between unequal groups

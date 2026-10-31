@@ -12,7 +12,7 @@ def construct(talk):
     talk.play(FadeOut(head), run_time=0.3)
     talk.play(*(t.animate.move_to(slots[i]) for i, t in enumerate(tasks)), FadeIn(fresh), run_time=0.3)
 
-    talk.loop("waits")
+    talk.loop("between-waits")
     talk.wait(0.2)
     pulse = Circle(0.3, color=BLUE).shift([0, -1.5, 0])
     talk.play(FadeIn(pulse), run_time=0.2)

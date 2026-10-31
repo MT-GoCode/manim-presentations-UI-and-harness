@@ -417,7 +417,7 @@ def build(talk: Path, workers: int | None) -> int:
             for b in r.beats
             if not b.animations
         ]
-        findings += geometry.check(r.beats, settings.frame_width, settings.frame_height, settings.pixel_width)
+        findings += geometry.check(r.beats, settings)
         findings += loop_closure(layout.process(f"pass1-{r.chapter}"), r)
     if findings:
         report(findings)

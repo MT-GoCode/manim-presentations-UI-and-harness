@@ -11,7 +11,10 @@ Manim touches here (each tested one to one in tests/unit/test_hooks.py):
 - the partial-file mapping: `file_writer.partial_movie_files`, one entry per play (None for skipped ones);
 - the loop-closure capture points: `renderer.render` (a play's first frame, after `update_to_time(0)`) and
   `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws on a fresh, unpatched `Camera`
-  in Manim's order: the play's `static_mobjects`, then its `moving_mobjects` (which include the foreground)."""
+  in Manim's order: the play's `static_mobjects`, then its `moving_mobjects` (which include the foreground);
+- the size references: `Paragraph.__init__` (its Text lives off the scene family, in `lines_text`), and the
+  observation-only shadow on `Transform.clean_up_from_scene` (when its mobject stays on screen) and `Mobject.become`:
+  the text classes' own `initial_height`, `font_size`, `height` and `submobjects` are read, never written."""
 
 import sys
 from pathlib import Path
@@ -158,3 +161,71 @@ def canonical_raster(scene: Any) -> np.ndarray:
     for group in (static, moving, rest):
         camera.capture_mobjects(group)
     return camera.pixel_array.copy()
+
+
+SIZED = ("Text", "MarkupText", "Paragraph", "SingleStringMathTex", "DecimalNumber", "Typst")
+
+
+def sized(m: Mobject) -> bool:
+    """A mobject whose declared size the min-text check reads: Manim derives its font_size from its height."""
+    return any(c.__name__ in SIZED for c in type(m).__mro__)
+
+
+def size_ref(m: Mobject) -> tuple[float, float]:
+    """(reference height, the font size at that height). Manim's own: (initial_height, font_size · initial_height /
+    height), the size it was created at; or the shadow a Transform or become left on it."""
+    for ref in (getattr(m, "_mpres_ref", None), getattr(m, "_mpres_paragraph_ref", None)):
+        if ref is not None:
+            return ref
+    initial, size = getattr(m, "initial_height"), getattr(m, "font_size")  # noqa: B009 — text-class attributes
+    return initial, size * initial / m.height
+
+
+def font_size(m: Mobject) -> float:
+    """The declared size now: the reference size scaled by how much the mobject grew since (later scale() calls stay
+    reflected)."""
+    height, size = size_ref(m)
+    return size * m.height / height
+
+
+def install_size_references() -> None:
+    """Pass 1 only. Record Paragraph's reference at creation; after a Transform whose source stays on screen holding
+    the target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction), and after become,
+    give each size-checked node of the source the matching target node's reference, paired by family index. A count
+    mismatch is marked for the check to report."""
+    from manim import Paragraph, Transform
+
+    paragraph_init = Paragraph.__init__
+
+    def recording_paragraph(self: Any, *a: Any, **k: Any) -> None:
+        paragraph_init(self, *a, **k)
+        setattr(self, "_mpres_paragraph_ref", (self.height, self.lines_text.font_size))
+
+    def take(source: Mobject, target: Mobject) -> None:
+        mine = [x for x in source.get_family() if sized(x)]
+        theirs = [x for x in target.get_family() if sized(x)]
+        if len(mine) != len(theirs):
+            setattr(source, "_mpres_size_mismatch", True)
+            return
+        refs = [size_ref(t) for t in theirs]  # read before writing: source and target may share nodes
+        for x, ref in zip(mine, refs, strict=True):
+            setattr(x, "_mpres_ref", ref)
+
+    clean_up = Transform.clean_up_from_scene
+
+    def shadowing_clean_up(self: Any, scene: Any) -> None:
+        clean_up(self, scene)
+        if self.mobject in scene.get_mobject_family_members():
+            take(self.mobject, self.target_mobject)
+
+    become = Mobject.become
+
+    def shadowing_become(self: Mobject, mobject: Mobject, *a: Any, **k: Any) -> Mobject:
+        refs_source = mobject
+        out = become(self, mobject, *a, **k)
+        take(self, refs_source)
+        return out
+
+    setattr(Paragraph, "__init__", recording_paragraph)
+    setattr(Transform, "clean_up_from_scene", shadowing_clean_up)
+    setattr(Mobject, "become", shadowing_become)

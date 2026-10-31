@@ -12,6 +12,8 @@ import av
 import numpy as np
 from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, TEST_WORKERS_WIDE
 
+from manim_presentations.script import load
+
 
 def build(root, workers=TEST_WORKERS, env=None, cwd=None):
     cmd = [sys.executable, "-P", "-m", "manim_presentations.cli", "build", str(root), "--workers", str(workers)]
@@ -45,7 +47,7 @@ def edit(path: Path, old: str, new: str) -> None:
 def test_a_full_build_commits_every_beat_and_a_rebuild_renders_nothing(talk):
     root = talk("edge")
     r = ok(build(root))
-    assert len(rendered(r)) == len(index(root)["beats"]) == 13
+    assert len(rendered(r)) == len(index(root)["beats"]) == sum(len(c.beats) for c in load(root / "script.md").chapters)
     assert "digests verified" in r.stdout
     r2 = ok(build(root))
     assert rendered(r2) == [] and "render: 0 beats" in r2.stdout
@@ -193,7 +195,7 @@ def test_a_schema_mismatch_rebuilds_everything_and_leaves_no_old_clips(talk):
     edit(root / "chapters" / "text.py", 'Text("Edge"', 'Text("Edged"')
     r = ok(build(root))
     assert "previous build: none (schema 0≠1)" in r.stdout
-    assert len(rendered(r)) == 13
+    assert len(rendered(r)) == len(index(root)["beats"])
     new = {b["clip"] for b in index(root)["beats"]}
     assert {f.split(".")[0] for f in os.listdir(root / "build" / "clips")} == new  # nothing of the old build left
     assert old - set(os.listdir(root / "build" / "clips"))  # the edited beat's old clip went
@@ -276,7 +278,7 @@ def test_engine_edits_outside_clip_py_render_nothing_and_clip_py_renders_everyth
     assert len(hashes()) == 1
     with (pkg / "manim_presentations" / "clip.py").open("a") as f:
         f.write("\n# an edit\n")
-    assert len(rendered(ok(build(root, env=env)))) == 13
+    assert len(rendered(ok(build(root, env=env)))) == len(index(root)["beats"])
 
 
 def test_a_clip_whose_stream_does_not_match_the_declared_encoding_fails(talk, tmp_path):

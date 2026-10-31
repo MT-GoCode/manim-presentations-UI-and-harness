@@ -111,6 +111,7 @@ def main(argv: list[str]) -> int:
         }
     )
     manim_hooks.record_creation_lines(frozenset({str(chapter)}))
+    manim_hooks.install_size_references()
     scene: Pass1Talk | None = None
     failure: Exception | None = None
     guard.active = True

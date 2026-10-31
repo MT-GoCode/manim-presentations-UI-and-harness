@@ -25,6 +25,9 @@ class Unit(_Frozen):
     attached_to: int | None  # id of what it was attached to (talk.attach)
     transient_beat: int | None  # index of the beat it was made transient in (talk.transient)
     bleed: bool  # meant to extend past the frame edge (talk.bleed)
+    text_size: float | None  # the smallest declared font size of Pango text in it (Text, MarkupText, Paragraph)
+    tex_size: float | None  # the smallest of TeX-set text in it (MathTex, Tex, DecimalNumber, Typst)
+    size_mismatch: bool  # a Transform or become between groups of unequal numbers of text objects
     glyphs: tuple[Box, ...]  # letters and symbols
     markers: tuple[Box, ...]  # dots: placed on paths by intent, so they meet glyphs and dots only
     strokes: tuple[tuple[tuple[float, float], ...], ...]  # polylines, one per subpath

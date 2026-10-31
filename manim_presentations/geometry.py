@@ -12,8 +12,11 @@ from typing import Any, Literal, NamedTuple
 import numpy as np
 
 from manim_presentations.records import BeatRecord, Unit
+from manim_presentations.settings import SCALE_FACTOR_PER_FONT_POINT, Settings
 
-Kind = Literal["pairing", "empty-beat", "overlap", "off-frame", "transient", "loop"]
+SIZE_EPS = 1e-6  # a size is read back from a height; moving text perturbs it by ~1e-14 (vendored from Explainers)
+
+Kind = Literal["pairing", "empty-beat", "overlap", "off-frame", "transient", "loop", "min-text", "size-mismatch"]
 
 
 class Finding(NamedTuple):
@@ -114,11 +117,17 @@ def _named(u: Unit, ink: np.ndarray) -> str:
     return f"{u.kind} at ({x:.2f}, {y:.2f})"
 
 
-def check(beats: Sequence[BeatRecord], frame_width: float, frame_height: float, pixel_width: int) -> list[Finding]:
+def check(beats: Sequence[BeatRecord], settings: Settings) -> list[Finding]:
     """Every geometry error at every beat end, each naming `file:line` and the move that clears it."""
     errs: list[Finding] = []
+    frame_width, frame_height = settings.frame_width, settings.frame_height
     fx, fy = frame_width / 2, frame_height / 2
-    s = frame_width / pixel_width / 2  # under half a pixel of ink is not drawn: neither overlap nor off frame
+    s = frame_width / settings.pixel_width / 2
+    # the minimums as font sizes in this frame (they are stored as fractions of frame height, settings.py)
+    min_text = settings.min_text * frame_height / SCALE_FACTOR_PER_FONT_POINT
+    min_tex = (
+        settings.min_tex * frame_height / SCALE_FACTOR_PER_FONT_POINT
+    )  # under half a pixel of ink is not drawn: neither overlap nor off frame
     for n, beat in enumerate(beats):
         units = beat.end
         inks = [_ink(u) for u in units]
@@ -153,6 +162,23 @@ def check(beats: Sequence[BeatRecord], frame_width: float, frame_height: float, 
                         "off-frame",
                         f"{beat.slug} · {u.file}:{u.line} · {nu} is off frame by "  # moving in clears it
                         f"{math.ceil((over[edge] - s) * 100) / 100:.2f} ({edge}); move it in, or talk.bleed() it",
+                    )
+                )
+            for kind_size, minimum, key in ((u.text_size, min_text, "min_text"), (u.tex_size, min_tex, "min_tex")):
+                if kind_size is not None and kind_size < minimum - SIZE_EPS:
+                    errs.append(
+                        Finding(
+                            "min-text",
+                            f"{beat.slug} · {u.file}:{u.line} · {nu} font size {kind_size:.1f} "
+                            f"is below the minimum {minimum:.1f} (talk.toml checks.{key})",
+                        )
+                    )
+            if u.size_mismatch:
+                errs.append(
+                    Finding(
+                        "size-mismatch",
+                        f"{beat.slug} · {u.file}:{u.line} · {nu} was transformed between "
+                        "groups of unequal numbers of text objects; use ReplacementTransform(a, b)",
                     )
                 )
             if u.transient_beat == n:

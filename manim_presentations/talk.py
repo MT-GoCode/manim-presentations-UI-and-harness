@@ -22,6 +22,7 @@ from manim import (
     Scene,
     SingleStringMathTex,
     Text,
+    Typst,
     VGroup,
     VMobject,
 )
@@ -212,6 +213,9 @@ class Pass1Talk(Talk):
                     attached_to=attached,
                     transient_beat=transient,
                     bleed=bleed,
+                    text_size=_smallest(m, TEX, False),
+                    tex_size=_smallest(m, TEX, True),
+                    size_mismatch=any(getattr(x, "_mpres_size_mismatch", False) for x in m.get_family()),
                     glyphs=tuple(g),
                     markers=tuple(d),
                     strokes=tuple(s),
@@ -222,6 +226,17 @@ class Pass1Talk(Talk):
         for m in self.mobjects:
             visit(m, None, [], None, None, False)
         return tuple(units)
+
+
+TEX = (SingleStringMathTex, DecimalNumber, Typst)  # TeX-set (or Typst-set) text: its own minimum, min_tex
+
+
+def _smallest(m: Mobject, tex: type | tuple[type, ...], want_tex: bool) -> float | None:
+    """The smallest declared font size among m's size-checked nodes of one kind (Pango text or TeX), if any."""
+    sizes = [
+        manim_hooks.font_size(x) for x in m.get_family() if manim_hooks.sized(x) and isinstance(x, tex) == want_tex
+    ]
+    return min(sizes) if sizes else None
 
 
 def _box(p: np.ndarray) -> Box:

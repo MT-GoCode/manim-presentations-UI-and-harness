@@ -57,6 +57,34 @@ def test_edge_and_hello_build_clean(talk):
         ("no-construct", r"error: chapters/no-construct\.py defines no construct\(talk\)"),
         ("no-beat", r"error: chapters/no-beat\.py: no talk\.beat\(\) in the chapter"),
         (
+            "small-text",
+            r"error: tiny · chapters/small-text\.py:6 · Text at \(.+\) font size 20\.0 is below the minimum 32\.0 \(talk\.toml checks\.min_text\)",
+        ),
+        (
+            "small-tex",
+            r"error: tiny-tex · chapters/small-tex\.py:6 · MathTex at \(.+\) font size 30\.0 is below the minimum 40\.0 \(talk\.toml checks\.min_tex\)",
+        ),
+        (
+            "shrink-animate",
+            r"error: shrinks · chapters/shrink-animate\.py:6 · Text at \(.+\) font size 12\.0 is below the minimum 32\.0",
+        ),
+        (
+            "shrink-scale",
+            r"error: shrinks-still · chapters/shrink-scale\.py:6 · Text at \(.+\) font size 12\.0 is below the minimum 32\.0",
+        ),
+        (
+            "small-number",
+            r"error: counter · chapters/small-number\.py:6 · DecimalNumber at \(.+\) font size 24\.0 is below the minimum 40\.0",
+        ),
+        (
+            "small-code",
+            r"error: listing · chapters/small-code\.py:6 · Code at \(.+\) font size 14\.0 is below the minimum 32\.0",
+        ),
+        (
+            "small-table",
+            r"error: grid · chapters/small-table\.py:6 · Table at \(.+\) font size 14\.4 is below the minimum 32\.0",
+        ),
+        (
             "unclosed",
             r'error: chapters/unclosed\.py:5 loop "drifts" does not close: its end state differs from its first frame in \d+ pixels',
         ),
