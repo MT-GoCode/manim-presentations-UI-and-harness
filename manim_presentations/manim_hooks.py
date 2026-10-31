@@ -13,8 +13,9 @@ Manim touches here (each tested one to one in tests/unit/test_hooks.py):
   `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws the scene's mobjects and
   foreground on a fresh, unpatched `Camera` in one `capture_mobjects` call;
 - the size references: `Paragraph.__init__` (its Text lives off the scene family, in `lines_text`), and the
-  observation-only shadow on `Transform.clean_up_from_scene` (when its mobject stays on screen) and `Mobject.become`:
-  the text classes' own `initial_height`, `font_size`, `height` and `submobjects` are read, never written."""
+  observation-only shadow on `Transform.clean_up_from_scene` (FadeTransform overrides it and restores its source)
+  and `Mobject.become`: the text classes' own `initial_height`, `font_size`, `height` and `submobjects` are read,
+  never written."""
 
 import sys
 from pathlib import Path
@@ -184,10 +185,10 @@ def font_size(m: Mobject) -> float:
 
 
 def install_size_references() -> None:
-    """Pass 1 only. Record Paragraph's reference at creation; after a Transform whose source stays on screen holding
-    the target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction), and after become,
-    give each size-checked node of the source the matching target node's reference, paired by family index. A count
-    mismatch is marked for the check to report."""
+    """Pass 1 only. Record Paragraph's reference at creation; after a Transform, whose source ends holding the
+    target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction, ReplacementTransform), and
+    after become, give each size-checked node of the source the matching target node's reference, paired by family
+    index. A count mismatch is marked for the check to report."""
     from manim import Paragraph, Transform
 
     paragraph_init = Paragraph.__init__
@@ -211,8 +212,7 @@ def install_size_references() -> None:
 
     def shadowing_clean_up(self: Any, scene: Any) -> None:
         clean_up(self, scene)
-        if self.mobject in scene.get_mobject_family_members():
-            take(self.mobject, self.target_mobject)
+        take(self.mobject, self.target_mobject)  # off screen too: a replaced source shown again holds the target
 
     become = Mobject.become
 

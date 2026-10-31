@@ -404,21 +404,20 @@ def test_text_transformed_into_a_non_text_slot_is_marked(size_hooks):
     assert getattr(a, "_mpres_size_mismatch", False) and getattr(b, "_mpres_size_mismatch", False)
 
 
-def test_a_source_that_leaves_the_screen_takes_no_shadow(size_hooks):
-    """FadeTransform restores its source and takes it off screen (its mobject is a group of the source and a target
-    copy, two texts against one). Shown again later, the source is its own 16 and is not marked mismatched."""
-    from manim import FadeTransform, Text
+def test_a_replaced_source_shown_again_is_sized_as_the_target_it_became(size_hooks):
+    """ReplacementTransform leaves its source holding the target's points; shown again, it draws the target's glyphs
+    at 48, which Manim's own reading (from the source's initial height) gets wrong."""
+    from manim import ReplacementTransform, Text
 
     def run(s):
         a, b = Text("a", font_size=16), Text("b", font_size=48)
         s.add(a)
-        s.play(FadeTransform(a, b))
+        s.play(ReplacementTransform(a, b))
         s.add(a)
         return a, b
 
     a, b = played(run)
-    assert not getattr(a, "_mpres_size_mismatch", False)
-    assert manim_hooks.font_size(a) == pytest.approx(16) and manim_hooks.font_size(b) == pytest.approx(48)
+    assert manim_hooks.font_size(a) == pytest.approx(48) and manim_hooks.font_size(b) == pytest.approx(48)
 
 
 def test_the_shadow_changes_no_frame(monkeypatch):
