@@ -7,6 +7,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 
 import pytest
 from conftest import REPO, mpres
@@ -26,12 +27,13 @@ from presenting import (
     red,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtNetwork import QLocalSocket
 from PySide6.QtTest import QTest
 
 from manim_presentations import audience, presenter
 from manim_presentations import protocol as p
-from manim_presentations.deck import Layout
+from manim_presentations.deck import Deck, Layout
 
 __all__ = ["launches", "open_"]  # fixtures, used by name
 
@@ -327,3 +329,97 @@ def test_closing_the_presenter_quits_the_audience(talk, open_, qtbot):
     probe = QLocalSocket()
     probe.connectToServer(presenter.socket_path(talk))
     assert not probe.waitForConnected(WAIT_MS)
+
+
+# --- what the Presenter shows: the status line, the stills, the editor's fit ---
+def test_the_status_line_shows_only_what_the_audience_said_about_this_beat(talk, open_, qtbot):
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello()
+    fake.next()
+    fake.say(p.NowCovered(position=p.Before(), clip=clip(talk, "title-card")))
+    qtbot.waitUntil(lambda: "title-card covered" in window.status.text(), timeout=WAIT_MS)
+    press(window, Qt.Key.Key_Down)
+    assert "Audience: waiting · beat 1/5" in window.status.text()
+    fake.say(p.NowCovered(position=p.Before(), clip=clip(talk, "title-card")))  # late, about the previous position
+    qtbot.wait(QUIET_MS)
+    assert "Audience: waiting" in window.status.text() and window.now is None
+
+
+def test_previous_shows_the_beat_as_last_seen_and_never_replays_it(talk, open_, qtbot):
+    fake = FakeAudience(qtbot, talk)
+    window = open_(talk)
+    fake.hello()
+    fake.next()
+    for _ in range(2):
+        press(window, Qt.Key.Key_Down)
+        fake.next()
+    press(window, Qt.Key.Key_Up)
+    assert fake.next() == p.Hold(position=p.At(slug="title-card"), clip=clip(talk, "title-card"))
+    press(window, Qt.Key.Key_Up)
+    assert fake.next() == p.Cover(position=p.Before(), clip=clip(talk, "title-card"))
+
+
+def test_the_stills_show_now_and_next(talk, open_, qtbot):
+    window = open_(talk)
+    beats = {b.slug: b for b in Deck.open(talk).beats}
+
+    def same(still, png):
+        return still.source.toImage() == QPixmap(str(png)).toImage()
+
+    assert same(window.now_still, beats["title-card"].first_png) and same(
+        window.next_still, beats["title-card"].last_png
+    )
+    window.go(p.At(slug="the-idea"), "show")
+    assert same(window.now_still, beats["the-idea"].last_png) and same(
+        window.next_still, beats["working-card"].last_png
+    )
+    window.go(p.At(slug="keeps-going"), "show")
+    assert same(window.now_still, beats["keeps-going"].last_png) and window.next_still.source.isNull()
+    assert window.next_label.text() == "Next: end of talk"
+    window.go(p.Before(), "show")
+    assert window.next_label.text() == "Next"
+
+
+def test_the_editor_fits_a_short_beat_and_floors_a_long_one(talk, open_, qtbot):
+    window = open_(talk)
+    window.resize(1600, 1000)
+    window.go(p.At(slug="the-idea"), "show")
+    window.fit()
+    short = window.editor.document().defaultFont().pointSize()
+    assert short > presenter.EDITOR_FLOOR_PT and "beat text overflows" not in window.status.text()
+    window.editor.setPlainText("A long beat.\n" * 300)  # ~7500 px at the 16 pt floor, in a 1000 px window
+    qtbot.waitUntil(lambda: "beat text overflows" in window.status.text(), timeout=WAIT_MS)
+    assert window.editor.document().defaultFont().pointSize() == presenter.EDITOR_FLOOR_PT
+    assert window.editor.verticalScrollBar().maximum() > 0  # below the floor, it scrolls
+
+
+def test_the_clock_counts_from_the_first_next(talk, open_, qtbot, monkeypatch):
+    window = open_(talk)
+    qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
+    assert window.status.text().endswith("0:00")
+    press(window, Qt.Key.Key_Down)
+    later = time.monotonic() + 75
+    monkeypatch.setattr(presenter.time, "monotonic", lambda: later)
+    window.refresh_status()
+    assert window.status.text().endswith("1:15")
+
+
+def test_from_shows_its_position_before_the_audience_answers(talk, open_):
+    window = open_(talk, "build-up")
+    assert window.position == p.At(slug="working-card")
+
+
+def test_each_launch_truncates_the_audience_log(talk, open_, qtbot):
+    log = Layout(talk).audience_log
+    log.write_text("a previous launch's output\n")
+    window = open_(talk)
+    qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
+    assert "a previous launch's output" not in log.read_text()
+
+
+def test_a_deleted_script_turns_red(talk, open_, qtbot):
+    window = open_(talk)
+    (talk / "script.md").unlink()
+    qtbot.waitUntil(lambda: "script.md is missing" in window.status.text(), timeout=WAIT_MS)
+    assert red(window)

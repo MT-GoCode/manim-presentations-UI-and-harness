@@ -39,6 +39,10 @@ whose own value differs (an Audience that survived a `git pull`) relaunches it."
 KEYS: dict[str, Action] = {"Up": "previous", "PageUp": "previous", "Down": "next", "PageDown": "next", "R": "replay"}
 """Qt key names (`Qt.Key.Key_<name>`) to actions. PageUp/PageDown are what presentation clickers send."""
 
+CHORD = ("ControlModifier", "AltModifier", "MetaModifier")
+"""Qt modifier names (`Qt.KeyboardModifier.<name>`): a key held with any of them is a shortcut (Cmd+R, Cmd+W), never
+navigation. Shift and the keypad flag (arrows on macOS) do not count."""
+
 
 class Moved(_Frozen):
     kind: Literal["moved"] = "moved"

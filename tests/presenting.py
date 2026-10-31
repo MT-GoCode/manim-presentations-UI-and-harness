@@ -101,7 +101,7 @@ class FakeAudience:
     """A test-side Audience: listens on the talk's socket, records what the Presenter sends, says what it is told."""
 
     def __init__(self, qtbot, root):
-        self.qtbot, self.got, self.buffer = qtbot, [], b""
+        self.qtbot, self.got, self.buffer, self.read = qtbot, [], b"", 0
         self.client: QLocalSocket | None = None
         self.name = presenter.socket_path(root)
         QLocalServer.removeServer(self.name)
@@ -135,9 +135,10 @@ class FakeAudience:
         self.server.close()
 
     def next(self):
-        n = len(self.got)
-        self.qtbot.waitUntil(lambda: len(self.got) > n, timeout=WAIT_MS)
-        return self.got[n]
+        """The next message not yet read, however early it arrived."""
+        self.qtbot.waitUntil(lambda: len(self.got) > self.read, timeout=WAIT_MS)
+        self.read += 1
+        return self.got[self.read - 1]
 
 
 def clip(root, slug):

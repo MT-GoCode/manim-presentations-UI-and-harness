@@ -20,6 +20,7 @@ __all__ = ["open_"]  # a fixture, used by name
 
 TALK = (*BEATS, "wrap-up")
 LOG = REPO / "test-results" / "present-e2e.log"
+SHOT = REPO / "test-results" / "presenter.png"  # the Presenter View at the end of the walk, offscreen
 
 
 @pytest.fixture(scope="session")
@@ -79,6 +80,8 @@ def test_every_key_through_the_whole_talk(talk, open_, qtbot):
     expect(p.At(slug="wrap-up"), "held")
     LOG.parent.mkdir(exist_ok=True)
     LOG.write_text("\n".join(log) + "\n")
+    window.resize(1728, 1117)  # a 16-inch MacBook Pro's default scaled screen: what Minh presents on
+    assert window.grab().save(str(SHOT))
 
 
 # --- rebuilds while presenting ---
@@ -203,7 +206,7 @@ def test_a_reconnect_adopts_a_stale_deck_in_amber(talk, open_, qtbot):
     qtbot.waitUntil(now_is(first, p.Before()), timeout=LAUNCH_MS)
     first.go(p.At(slug="build-up"), "show")
     qtbot.waitUntil(now_is(first, p.At(slug="build-up"), "held"), timeout=WAIT_MS)
-    first.link.quitting = True  # this Presenter dies without a word: no Quit reaches the Audience
+    first.link.told = "quit"  # this Presenter dies without a word: no Quit reaches the Audience
     first.link.socket.abort()
     first.close()  # and its lock goes with it
     edit(talk / "chapters" / "opening.py", "One idea per beat", "One idea per minute")

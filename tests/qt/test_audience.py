@@ -234,6 +234,30 @@ def test_a_switch_from_a_running_loop_reports_only_the_new_clip(rig, clips, qtbo
                 assert ("a", 0) not in after[after.index(("b", 0)) :] and shows(view.sink.videoFrame()) == ("b", 0)
 
 
+@pytest.mark.parametrize("running", ["play", "loop"])
+@pytest.mark.parametrize("to", ["play", "hold"])
+def test_the_clip_already_playing_again_reports_only_its_new_start(rig, clips, qtbot, running, to):
+    """Replay mid-animation, or a timeline click on the current beat: the same clip, still in flight. Qt's same-source
+    path emits LoadedMedia during setSource, so only the frame itself (its time) tells old from new."""
+    _, client, presented = rig
+    a = str(clips["a"])
+    for n in range(SWITCHES):
+        first = p.Loop(position=at(f"r{n}"), clip=a) if running == "loop" else p.Play(position=at(f"r{n}"), clip=a)
+        client.send(first)
+        assert client.next().state in ("looping", "playing")
+        mark = len(presented)
+        qtbot.waitUntil(lambda m=mark: any(shows(f)[1] >= 10 for f in presented[m:]), timeout=WAIT_MS)
+        if to == "play":
+            client.send(p.Play(position=at(f"p{n}"), clip=a))
+            now = client.next()
+            assert isinstance(now, p.NowAt) and (now.state, now.pts) == ("playing", 0.0)
+            assert client.next().state == "held"
+        else:
+            client.send(p.Hold(position=at(f"h{n}"), clip=a))
+            now = client.next()
+            assert isinstance(now, p.NowAt) and now.state == "held" and round(now.pts * FPS) == FRAMES - 1
+
+
 @pytest.mark.parametrize("again", ["replay", "previous"])
 def test_the_clip_on_screen_can_be_played_again_or_covered(rig, clips, again):
     """Replay (Play the same clip) and Previous to Before (Cover the same clip): Qt's same-source path."""

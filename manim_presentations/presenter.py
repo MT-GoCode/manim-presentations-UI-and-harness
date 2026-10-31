@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
 from hashlib import sha256
 from pathlib import Path
@@ -62,9 +63,6 @@ Shown = p.Play | p.Loop | p.Cover | p.Hold
 EDITOR_FLOOR_PT = 16  # P1(e): the smallest editor text legible at presenter distance
 FLASH_MS = 150  # a pressed button stays lit this long: long enough to see, shorter than a fast double press
 CONNECT_RETRY_MS = 50  # polling a launched Audience's socket: invisible against its ~1 s start (PySide import)
-# A key held with these is a shortcut (Cmd+R, Cmd+W), never navigation; Shift and the keypad flag (arrows on macOS)
-# do not count.
-CHORD = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier
 ACCENT = "#3d7eff"
 LOCK_RETRY_S = 1.0  # §3.7: GC's liveness probe holds the presenter lock for microseconds; 1 s is imperceptible
 PARENT_WATCH_MS = 1000  # the parent-death watch's interval, as the scene processes' (talk.watch_parent)
@@ -109,6 +107,16 @@ def socket_path(root: Path) -> str:
     return str(Path(os.environ["TMPDIR"]) / f"mpres-{sha256(str(root).encode()).hexdigest()[:16]}")
 
 
+@dataclass(frozen=True)
+class FatalSaid:
+    reason: str
+
+
+# What this connection has told the Presenter, set where each message is decoded; a drop routes on it alone.
+# "quit" and "replace" are the Presenter's own Quit: on purpose, or to an Audience of other code (relaunched).
+Told = Literal["nothing", "hello", "closed", "quit", "replace"] | FatalSaid
+
+
 class Link(QObject):
     """The Audience process and its socket. It hides launching, reaping and relaunching, and reports two things up:
     every message after the code check, and its own trouble line (None once there is none)."""
@@ -123,12 +131,8 @@ class Link(QObject):
         super().__init__()
         self.root, self.title, self.received, self.trouble = root, title, received, trouble
         self.name = socket_path(root)
-        self.pid: int | None = None  # the Audience this Presenter launched; None for an adopted one
-        self.hello = False  # a Hello arrived on this connection
-        self.fatal: str | None = None
-        self.closed = False  # the Audience window was closed by hand
-        self.quitting = False  # this Presenter sent Quit on purpose
-        self.replacing = False  # Quit sent to an Audience of other code; relaunch when it is gone
+        self.pid: int | None = None  # the Audience this Presenter launched and has not reaped; None for an adopted one
+        self.told: Told = "nothing"
         self.on_click: Callable[[], None] | None = None
         self.buffer = b""
         self.socket = QLocalSocket()
@@ -145,6 +149,8 @@ class Link(QObject):
         return self.socket.waitForConnected()
 
     def launch(self) -> None:
+        if self.pid is not None:
+            os.waitpid(self.pid, 0)  # the previous Audience dropped its socket: it is exiting; reap it before the next
         QLocalServer.removeServer(self.name)  # a crashed Audience leaves its socket file behind
         log = d.Layout(self.root).audience_log
         argv = [sys.executable, "-P", "-m", "manim_presentations.audience", self.name, self.title]
@@ -155,7 +161,7 @@ class Link(QObject):
         ]
         # setsid: the terminal's SIGHUP never reaches the Audience; stdout to a file: it never holds the caller's pipe
         self.pid = os.posix_spawn(sys.executable, argv, os.environ, file_actions=actions, setsid=True)
-        self.hello, self.fatal, self.closed, self.buffer = False, None, False, b""
+        self.told, self.buffer = "nothing", b""
         self.retry.start()
 
     def _try_connect(self) -> None:
@@ -176,7 +182,7 @@ class Link(QObject):
             self.socket.waitForBytesWritten()
 
     def quit(self) -> None:
-        self.quitting = True
+        self.told = "quit"
         self.send(p.Quit())
 
     def click(self) -> None:
@@ -191,45 +197,37 @@ class Link(QObject):
             raw = json.loads(line)
             if raw["type"] == "hello" and raw["protocol"] != p.AUDIENCE_CODE:
                 # Decoded by that one field: an Audience of other code may not speak this union at all.
-                self.replacing = True
+                self.told = "replace"
                 self.send(p.Quit())
                 return
             message = p.to_presenter(line)
             match message:
                 case p.Hello():
-                    self.hello = True
+                    self.told = "hello"
                     self.received(message)
                 case p.Fatal(reason=reason):
-                    self.fatal = reason
+                    self.told = FatalSaid(reason)
                 case p.Closed():
-                    self.closed = True
+                    self.told = "closed"
                 case p.NowCovered() | p.NowAt() | p.Failed() | p.Key():
                     self.received(message)
 
     def _dropped(self) -> None:
-        """Route on what this connection told us before it dropped."""
         self.retry.stop()
-        if self.pid is not None and os.waitpid(self.pid, os.WNOHANG)[0]:
-            self.pid = None
-        if self.quitting:
-            return
-        if self.replacing:
-            self.replacing = False
-            self._relaunch()
-        elif self.fatal is not None:
-            self.trouble(f"Audience failed: {self.fatal}")
-        elif not self.hello:
-            self.trouble(f"Audience failed to start; see {d.Layout(self.root).audience_log}")
-        elif self.closed:
-            self.trouble("Audience closed — click to reopen")
-            self.on_click = self._reopen
-        else:
-            self._relaunch()
-
-    def _relaunch(self) -> None:
-        self.launch()
-        self.trouble("Audience relaunched — re-share the Audience View window (click when done)")
-        self.on_click = lambda: self.trouble(None)
+        match self.told:
+            case "quit":
+                pass
+            case "replace" | "hello":  # other code, or a crash after Hello
+                self.launch()
+                self.trouble("Audience relaunched — re-share the Audience View window (click when done)")
+                self.on_click = lambda: self.trouble(None)
+            case FatalSaid(reason=reason):
+                self.trouble(f"Audience failed: {reason}")
+            case "nothing":
+                self.trouble(f"Audience failed to start; see {d.Layout(self.root).audience_log}")
+            case "closed":
+                self.trouble("Audience closed — click to reopen")
+                self.on_click = self._reopen
 
     def _reopen(self) -> None:
         self.trouble(None)
@@ -297,7 +295,7 @@ class Presenter(QMainWindow):
         self.title_text = script.load(self.script_path).title
         self.setWindowTitle(f"{self.title_text} — Presenter View")
         self.slugs = tuple(b.slug for b in deck.beats)
-        self.position: p.Before | p.At = p.Before()
+        self.position: p.Before | p.At = start or p.Before()  # `--from` shows at once; the Audience follows on Hello
         self.now: p.NowCovered | p.NowAt | None = None
         self.red: dict[str, str] = {}  # what is wrong, by source; the status line shows red while any is set
         self.amber: dict[str, str] = {}
@@ -426,7 +424,7 @@ class Presenter(QMainWindow):
             self.go(p.At(slug=slug), "show")
 
     def go(self, position: p.Before | p.At, how: How) -> None:
-        self.position = position
+        self.position, self.now = position, None  # until the Audience reports this position
         self.last_sent = show_for(position, self.beat_at(position), how)
         self.link.send(self.last_sent)
         self.show_position()
@@ -448,6 +446,7 @@ class Presenter(QMainWindow):
             case p.Before():
                 self.now_still.show_png(beat.first_png)
                 self.next_still.show_png(beat.last_png)
+                self.next_label.setText("Next")
             case p.At():
                 self.now_still.show_png(beat.last_png)
                 nxt = self.deck.beats[i + 1] if i + 1 < len(self.deck.beats) else None
@@ -477,9 +476,9 @@ class Presenter(QMainWindow):
 
     def adopt(self, last: p.NowCovered | p.NowAt | None) -> None:
         """On each Hello: `--from` wins once; else keep what the Audience shows if it is this deck's; else show ours."""
-        if self.start is not None:
-            start, self.start = self.start, None
-            self.go(start, "show")
+        if self.start is not None:  # once: a later Hello (a relaunch) adopts as usual
+            self.start = None
+            self.go(self.position, "show")
             return
         match last:
             case p.NowAt(position=p.At(slug=slug) as at, clip=clip) if slug in self.slugs and self.clip_of(at) == clip:
@@ -559,23 +558,19 @@ class Presenter(QMainWindow):
         self.link.click()
 
     def refresh_status(self) -> None:
-        if self.red:
-            text, color = " · ".join(self.red.values()), "#c62828"
-        elif self.amber:
-            text, color = " · ".join(self.amber.values()), "#e0a100"
-        else:
-            beat = self.beat_at(self.position)
-            n = len(self.slugs)
-            i = self.slugs.index(beat.slug) + 1 if isinstance(self.position, p.At) else 0
-            match self.now:
-                case p.NowAt(state=state):
-                    seen = f"{beat.slug} {state}"
-                case p.NowCovered():
-                    seen = f"{beat.slug} covered"
-                case None:
-                    seen = "connecting"
-            elapsed = int(time.monotonic() - self.started) if self.started is not None else 0
-            text, color = f"Audience: {seen} · beat {i}/{n} · {elapsed // 60}:{elapsed % 60:02d}", "#2e7d32"
+        """Red problems, then amber ones, then always what the Audience reported, the beat and the elapsed time."""
+        match self.now:  # only what the Audience said about the current position (received drops the rest)
+            case p.NowAt(position=p.At(slug=slug), state=state):
+                seen = f"{slug} {state}"
+            case p.NowCovered():
+                seen = f"{self.slugs[0]} covered"
+            case None:
+                seen = "waiting"
+        i = self.slugs.index(self.position.slug) + 1 if isinstance(self.position, p.At) else 0
+        elapsed = int(time.monotonic() - self.started) if self.started is not None else 0
+        fields = f"Audience: {seen} · beat {i}/{len(self.slugs)} · {elapsed // 60}:{elapsed % 60:02d}"
+        color = "#c62828" if self.red else "#e0a100" if self.amber else "#2e7d32"
+        text = " · ".join([*self.red.values(), *self.amber.values(), fields])
         self.status.setText(text)
         self.status.setStyleSheet(f"color: white; background: {color}; padding: 6px; font-size: 14pt;")
 
@@ -605,7 +600,10 @@ class Presenter(QMainWindow):
         try:
             text = self.script_path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            return  # between an editor's unlink and its rename; the rename fires again
+            # Between an editor's unlink and its rename the rename clears this; a real deletion keeps it red.
+            self.red["structure"] = "script.md is missing"
+            self.refresh_status()
+            return
         if "save" in self.red:
             return  # a failed save: what was typed must not be overwritten by a reload
         try:
@@ -652,7 +650,6 @@ class Presenter(QMainWindow):
             self.amber["overflow"] = "beat text overflows"
         else:
             self.amber.pop("overflow", None)
-        self.font_points = best or EDITOR_FLOOR_PT
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -669,7 +666,7 @@ class Presenter(QMainWindow):
         action = p.KEYS.get(name)
         if action is None or (self.editor.hasFocus() and name in TEXT_EDIT_KEYS):
             return False
-        if event.modifiers() & CHORD:
+        if any(event.modifiers() & Qt.KeyboardModifier[m] for m in p.CHORD):
             return False
         if not event.isAutoRepeat():  # a held key or a repeating clicker advances one beat
             self.act(action)

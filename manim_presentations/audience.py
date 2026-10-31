@@ -24,9 +24,6 @@ from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from manim_presentations import protocol as p
 
-# A key held with these is a shortcut (Cmd+R, Cmd+W), never navigation; Shift and the keypad flag (arrows on macOS)
-# do not count.
-CHORD = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier
 NO_SCREEN_WIDTH = 0.55  # of the screen when there is no second one: rev 14's guess, confirmed or changed in P6 (D4)
 
 Shown = p.Play | p.Loop | p.Cover | p.Hold
@@ -41,9 +38,18 @@ class Loading:
     then: State
 
 
-# What the player is awaited to do next for the shown message; every player signal routes on it alone. A State: the
-# next presented frame is reported as it. "end": a Play's EndOfMedia, which it reports as held.
-Expect = Loading | State | Literal["end"] | None
+@dataclass(frozen=True)
+class Awaiting:
+    """Loaded: the frame that spans `at_us` (0, or a Hold's seek target) is reported as `then`. Within one clip a
+    frame's time is its identity, so the previous playback of the same clip, still in flight, never counts."""
+
+    then: State
+    at_us: int
+
+
+# What the player is awaited to do next for the shown message; every player signal routes on it alone. "end": a
+# Play's EndOfMedia, which it reports as held.
+Expect = Loading | Awaiting | Literal["end"] | None
 
 
 def loaded_media_plugins() -> list[str]:
@@ -159,11 +165,12 @@ class Audience(QWidget):
     def _status(self, status: QMediaPlayer.MediaStatus) -> None:
         match self.expect, status:  # LoadedMedia always precedes BufferedMedia
             case Loading(then="held"), QMediaPlayer.MediaStatus.LoadedMedia:
-                self.expect = "held"
                 # duration - 1 ms lies inside the last frame; P1 measured it presenting exactly that frame, 5/5
-                self.player.setPosition(self.player.duration() - 1)
+                target = self.player.duration() - 1
+                self.expect = Awaiting("held", target * 1000)
+                self.player.setPosition(target)
             case Loading(then=then), QMediaPlayer.MediaStatus.LoadedMedia:
-                self.expect = then
+                self.expect = Awaiting(then, 0)
             case "end", QMediaPlayer.MediaStatus.EndOfMedia:
                 assert self.last_valid is not None
                 self.sink.setVideoFrame(self.last_valid)  # an empty frame precedes EndOfMedia: show the last real one
@@ -172,11 +179,16 @@ class Audience(QWidget):
                 pass
 
     def _presented(self, frame: QVideoFrame) -> None:
-        if not frame.isValid() or self.expect is None or isinstance(self.expect, Loading):
-            return  # an empty frame, or the outgoing clip's
-        self.last_valid = QVideoFrame(frame)
-        if self.expect != "end":
-            self.report(self.expect, frame)
+        if not frame.isValid():
+            return
+        match self.expect:
+            case Awaiting(then=then, at_us=at) if frame.startTime() <= at < frame.endTime():
+                self.last_valid = QVideoFrame(frame)
+                self.report(then, frame)
+            case "end":
+                self.last_valid = QVideoFrame(frame)
+            case _:
+                pass  # the outgoing playback's frames, or a Hold's frames before its seek lands
 
     def report(self, state: State, frame: QVideoFrame) -> None:
         assert self.shown is not None
@@ -216,7 +228,7 @@ class KeyForwarder(QObject):
         action = p.KEYS.get(Qt.Key(event.key()).name.removeprefix("Key_"))
         if action is None:
             return False
-        if event.modifiers() & CHORD:
+        if any(event.modifiers() & Qt.KeyboardModifier[m] for m in p.CHORD):
             return False  # Cmd+R and the like are the window's, not a navigation key
         if not event.isAutoRepeat():  # a held key or a repeating clicker sends one action
             self.audience.send(p.Key(action=action))
