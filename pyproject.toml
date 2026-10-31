@@ -106,7 +106,7 @@ name = "dependencies point one way: entry points over the scene side over the le
 type = "layers"
 layers = [
     "manim_presentations.cli",
-    "manim_presentations.build | manim_presentations.presenter",
+    "manim_presentations.build | manim_presentations.presenter | manim_presentations.export | manim_presentations.audience",
     "manim_presentations.worker",
     "manim_presentations.pass1",
     "manim_presentations.talk",

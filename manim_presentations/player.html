@@ -161,7 +161,7 @@ for (const [slug, title] of M.chapters) {
 jump.addEventListener("change", () => act("jump", {kind: "at", slug: jump.value}));
 for (const id of ["previous", "next", "replay"]) document.getElementById(id).addEventListener("click", () => act(id));
 document.addEventListener("keydown", (e) => {
-  const action = !(e.metaKey || e.ctrlKey || e.altKey) && M.keys[e.key];  // Cmd/Ctrl+R stay the browser's reload
+  const action = !M.chord.some((m) => e[m]) && M.keys[e.key];  // Cmd/Ctrl+R stay the browser's reload
   if (!action) return;
   e.preventDefault();  // a focused jump list never also moves its own selection
   if (!e.repeat) act(action);  // a held key or a repeating clicker advances once

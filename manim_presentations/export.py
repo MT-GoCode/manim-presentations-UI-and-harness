@@ -36,6 +36,9 @@ DOM_KEY = {
     "PageDown": ("PageDown",),
     "R": ("r", "R"),
 }
+# protocol.CHORD's Qt modifiers as KeyboardEvent flags. On macOS Qt's ControlModifier is Cmd (metaKey) and its
+# MetaModifier is Control (ctrlKey).
+DOM_MODIFIER = {"ControlModifier": "metaKey", "AltModifier": "altKey", "MetaModifier": "ctrlKey"}
 
 # What each --transcript mode puts in a beat's manifest entry: nothing, the spoken text, or that and the private notes.
 TRANSCRIPT: dict[str, Callable[[script.Beat], dict[str, str]]] = {
@@ -113,6 +116,7 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
                     [c.slug, c.title or c.slug] for c in talk.chapters
                 ],  # a list: JS orders integer-like keys first
                 "keys": {key: a for q, a in protocol.KEYS.items() for key in DOM_KEY[q]},
+                "chord": [DOM_MODIFIER[m] for m in protocol.CHORD],
                 "transcript": transcript,
                 "beats": [
                     {
