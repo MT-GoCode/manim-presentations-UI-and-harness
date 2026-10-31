@@ -204,8 +204,9 @@ def install_size_references() -> None:
     def take(source: Mobject, target: Mobject) -> None:
         mine = [x for x in source.get_family() if sized(x)]
         theirs = [x for x in target.get_family() if sized(x)]
-        if len(mine) != len(theirs):
-            setattr(source, "_mpres_size_mismatch", True)
+        if len(mine) != len(theirs):  # marked on the text nodes: a plain group is opened, so its own mark is lost
+            for x in mine:
+                setattr(x, "_mpres_size_mismatch", True)
             return
         refs = [size_ref(t) for t in theirs]  # read before writing: source and target may share nodes
         for x, ref in zip(mine, refs, strict=True):

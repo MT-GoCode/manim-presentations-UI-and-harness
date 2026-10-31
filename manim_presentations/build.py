@@ -14,11 +14,10 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NoReturn
 
 import numpy as np
 import psutil
@@ -90,6 +89,12 @@ def copy_tree(src: Path, dst: Path) -> None:
             copy_file(here / f, dst / here.relative_to(src) / f)
 
 
+def seed_caches(shared: Path, privates: list[Path]) -> None:
+    """Each process's private copy of the warm cache, copied in parallel: the copies wait on the disk, not a core."""
+    with ThreadPoolExecutor() as pool:
+        list(pool.map(lambda p: copy_tree(shared, p), privates))
+
+
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -145,7 +150,6 @@ def run_all(
     env: dict[str, str],
     layout: Layout,
     phase: str,
-    on_done: Callable[[int, int], None] = lambda done, total: None,
 ) -> tuple[dict[str, Done], int]:
     """Run jobs with at most `width` alive. The first failure kills the rest and raises with its whole stderr.
     Returns ({name: its peak RSS and cores}, peak number alive)."""
@@ -165,7 +169,6 @@ def run_all(
                 raise BuildError(
                     1, [f"{phase} failed in {job.name} ({log}):", log.read_text(errors="replace").rstrip()]
                 )
-            on_done(len(done), len(jobs))
     finally:
         for pid in alive:
             # The child leads its own group (setsid), so TeX dies with it. macOS answers EPERM for a group whose
@@ -183,18 +186,17 @@ def pass1_jobs(layout: Layout, script: Script, settings: Settings, shared: Path)
     jobs: list[Job] = []
     for c in script.chapters:
         name = f"pass1-{c.slug}"
-        private = layout.process(name) / "cache"
-        copy_tree(shared, private)
         args = [
             str(layout.snapshot),
             c.slug,
             c.title or c.slug,
             settings.to_argv(),
-            str(private),
+            str(layout.process(name) / "cache"),
             str(tinytex()),
             str(layout.process(name)),
         ]
         jobs.append(Job(name, "pass1", args))
+    seed_caches(shared, [layout.process(j.name) / "cache" for j in jobs])
     return jobs
 
 
@@ -232,13 +234,13 @@ def pairing(script: Script, records: list[ChapterRecord]) -> list[Finding]:
     return errs
 
 
-def width_for(phase: str, workers: int | None, jobs: int, cores: float, ram: int) -> int:
+def width_for(phase: str, workers: int | None, jobs: int, cores: float, ram: int) -> tuple[int, str]:
     """`--workers N` exactly, or 75% of free headroom for jobs of the given measured size, printed with its inputs (a
-    human line and one exact machine line)."""
+    human line and one exact machine line). Returns (width, what it was chosen from)."""
     estimate = f"{ram / 2**30:.2f} GB per job est"
     if workers is not None:
         say(f"{phase} width: {workers} (--workers) · {estimate}")
-        return workers
+        return workers, "--workers"
     if jobs == 1:
         tagged, label = headroom.ram_only(psutil.virtual_memory().available, ram), "1 job"
     else:
@@ -252,7 +254,7 @@ def width_for(phase: str, workers: int | None, jobs: int, cores: float, ram: int
     match tagged:
         case headroom.Width(n):
             say(f"{phase} width: {n} ({label}) · {estimate}")
-            return n
+            return n, label
         case headroom.RamExceeded(per_job, available):
             raise BuildError(
                 1,
@@ -324,7 +326,7 @@ def loop_closure(out: Path, record: ChapterRecord) -> list[Finding]:
     return findings
 
 
-def report(findings: list[Finding]) -> None:
+def fail_checks(findings: list[Finding]) -> NoReturn:
     counts = Counter(f.kind for f in findings)
     raise BuildError(
         1,
@@ -349,7 +351,8 @@ def build(talk: Path, workers: int | None) -> int:
         lock = layout.build_lock()
     except Busy:
         raise BuildError(3, [f"a build is running on {talk}"]) from None
-    shutil.rmtree(layout.media, ignore_errors=True)  # safe: holding the lock proves no earlier build process lives
+    if layout.media.exists():  # safe: holding the lock proves no earlier build process lives
+        shutil.rmtree(layout.media)
     files = layout.talk_files()
     for rel in files:
         dst = layout.snapshot / rel
@@ -375,13 +378,16 @@ def build(talk: Path, workers: int | None) -> int:
         if s not in chapters
     ]
     if missing or extra:
-        report([*missing, *extra])
-    previous = layout.previous()
+        fail_checks([*missing, *extra])
     pass1_cores, pass1_ram = PASS1_CORES, PASS1_RAM
-    match previous:
+    old_beats: dict[str, IndexBeat] = {}
+    old_files: set[str] = set()  # the previous index's files: kept one more build
+    match layout.previous():
         case PreviousBuild(index=old):
             pass1_cores = max(c.pass1_cores for c in old.chapters.values())
             pass1_ram = max(c.pass1_rss for c in old.chapters.values())
+            old_beats = {b.fingerprint: b for b in old.beats}
+            old_files = layout.files_of(old)
         case NoPrevious(reason=reason):
             match reason:
                 case Absent():
@@ -397,7 +403,7 @@ def build(talk: Path, workers: int | None) -> int:
     env = {**os.environ, "PYTHONHASHSEED": "0"}
     tex_env = {**env, "PATH": (tinytex() / "bin-path").read_text().strip() + os.pathsep + os.environ["PATH"]}
     jobs = pass1_jobs(layout, script, settings, shared)
-    width = width_for("pass-1", workers, len(jobs), pass1_cores, pass1_ram)
+    width, _ = width_for("pass-1", workers, len(jobs), pass1_cores, pass1_ram)
     pass1_done, peak = run_all(jobs, width, tex_env, layout, "pass 1")
     records = [
         CHAPTER_RECORD.validate_json((layout.process(f"pass1-{c}") / "records.json").read_bytes()) for c in chapters
@@ -421,12 +427,11 @@ def build(talk: Path, workers: int | None) -> int:
         findings += geometry.check(r.beats, settings)
         findings += loop_closure(layout.process(f"pass1-{r.chapter}"), r)
     if findings:
-        report(findings)
+        fail_checks(findings)
 
     # Fingerprint and reuse: a beat whose fingerprint the previous build committed, with its clip on disk, is reused.
     identity = clip.identity()
     prints = {(r.chapter, b.slug): fingerprint(identity, settings, b) for r in records for b in r.beats}
-    old_beats = {b.fingerprint: b for b in previous.index.beats} if isinstance(previous, PreviousBuild) else {}
     reused = {key for key, fp in prints.items() if fp in old_beats and layout.clip(old_beats[fp].clip).exists()}
     to_render = {
         r.chapter: {
@@ -459,7 +464,7 @@ def build(talk: Path, workers: int | None) -> int:
     if render_width is not None:
         join_width = render_width
     elif missing_stills:
-        join_width = width_for("stills", workers, missing_stills, DECODE_CORES, decode_ram(megapixels))
+        join_width, _ = width_for("stills", workers, missing_stills, DECODE_CORES, decode_ram(megapixels))
     else:
         join_width = 1  # nothing to join or extract: no pool, no sample
 
@@ -526,10 +531,7 @@ def build(talk: Path, workers: int | None) -> int:
     )
     with layout.clips_exclusive(lambda: say("commit: waiting for shots/export to finish")):
         layout.write_index(index)
-        keep = layout.files_of(index) | (
-            layout.files_of(previous.index) if isinstance(previous, PreviousBuild) else set()
-        )
-        collected = layout.gc(keep, layout.live_pins(), cid)
+        collected = layout.gc(layout.files_of(index) | old_files, layout.live_pins(), cid)
     pruned = prune_cache(shared, records)
     shutil.rmtree(layout.media, ignore_errors=True)
     os.close(lock)  # last: the next build may wipe .media only once this one is done with it
@@ -557,18 +559,19 @@ def render(
     pass 1's. Returns {(chapter, play index): its verified partial file}."""
     t2 = time.monotonic()
     n_plays = sum(len(p) for p in to_render.values())
+    # A beat renders whole or not at all, so its first play marks it; reused beats are the rest.
+    beats = [(r.chapter, b) for r in records for b in r.beats if b.first_anim in to_render.get(r.chapter, {})]
+    n_reused = sum(len(r.beats) for r in records) - len(beats)
     if not to_render:
-        say(f"render: 0 beats · {sum(len(r.beats) for r in records)} reused")
+        say(f"render: 0 beats · {n_reused} reused")
         return {}, None
     chunks = schedule.chunks(to_render, megapixels)
     titles = {c.slug: c.title or c.slug for c in script.chapters}
     worker_ram = max(pass1_done[f"pass1-{c}"].rss for c in to_render) + worker_overhead(megapixels)
-    width = width_for("render", workers, len(chunks), WORKER_CORES, worker_ram)
+    width, chosen = width_for("render", workers, len(chunks), WORKER_CORES, worker_ram)
     jobs = []
     for k, ch in enumerate(chunks):
         name = f"chunk-{k}"
-        private = layout.process(name) / "cache"
-        copy_tree(shared, private)
         jobs.append(
             Job(
                 name,
@@ -578,7 +581,7 @@ def render(
                     ch.chapter,
                     titles[ch.chapter],
                     settings.to_argv(),
-                    str(private),
+                    str(layout.process(name) / "cache"),
                     str(layout.process(name)),
                     str(ch.first),
                     str(ch.last),
@@ -586,26 +589,32 @@ def render(
             )
         )
 
-    chunks_done = [0]
+    seed_caches(shared, [layout.process(j.name) / "cache" for j in jobs])
     stop = threading.Event()
 
     def tail() -> None:
-        """Every second, the animations the workers have reported so far (one line each in their stdout files),
-        printed as one progress line when the count moves."""
+        """Every second, the plays the workers have rendered so far (one play index per line in their progress
+        files) and the beats whose every play is rendered, printed as one progress line when they move."""
         last = -1
         while not stop.wait(1.0):
-            n = sum(len(f.read_text().splitlines()) for j in jobs if (f := layout.process(j.name) / "stdout").exists())
-            if n != last:
-                last = n
+            seen = {
+                (ch.chapter, int(line))
+                for ch, j in zip(chunks, jobs, strict=True)
+                if (f := layout.process(j.name) / "progress").exists()
+                for line in f.read_text().split("\n")[:-1]  # complete lines only: a worker may be mid-write
+            }
+            if len(seen) != last:
+                last = len(seen)
+                whole = sum(all((c, b.first_anim + i) in seen for i in range(len(b.animations))) for c, b in beats)
                 say(
-                    f"render: {n}/{n_plays} animations · {chunks_done[0]}/{len(jobs)} chunks · {width} workers · "
+                    f"render: {len(seen)}/{n_plays} animations · {whole}/{len(beats)} beats · {width} workers · "
                     f"{time.monotonic() - t2:.0f}s"
                 )
 
     reader = threading.Thread(target=tail, daemon=True)
     reader.start()
     try:
-        done, peak = run_all(jobs, width, env, layout, "render", lambda d, _: chunks_done.__setitem__(0, d))
+        done, peak = run_all(jobs, width, env, layout, "render")
     finally:
         stop.set()
         reader.join()
@@ -633,9 +642,9 @@ def render(
     assert not missing, f"plays rendered by no chunk: {missing}"
     max_rss = max(d.rss for d in done.values())
     say(
-        f"render: {sum(1 for _ in reports)} animations in {len(chunks)} chunks · peak alive {peak} · "
-        f"{width} workers · {worker_ram / 2**30:.2f} GB/worker est, {max_rss / 2**30:.2f} GB peak · digests verified · "
-        f"{time.monotonic() - t2:.2f}s"
+        f"render: {len(beats)} beats ({len(reports)} animations) in {len(chunks)} chunks · {n_reused} reused · "
+        f"peak alive {peak} · {width} workers ({chosen}, {worker_ram / 2**30:.2f} GB/worker est, "
+        f"{max_rss / 2**30:.2f} GB peak) · digests verified · {time.monotonic() - t2:.2f}s"
     )
     return reports, width
 

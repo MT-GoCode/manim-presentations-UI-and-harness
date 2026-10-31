@@ -1,6 +1,7 @@
 import fcntl
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -66,6 +67,13 @@ def mpres(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[st
         text=True,
         timeout=SUBPROCESS_TIMEOUT,
     )
+
+
+def render_peak(r: subprocess.CompletedProcess[str]) -> int:
+    """Peak alive in a build's render phase alone (pass 1's line reports its own)."""
+    m = re.search(r"^render: \d+ beats .* · peak alive (\d+) ", r.stdout, re.M)
+    assert m, r.stdout
+    return int(m[1])
 
 
 def copy_talk(tmp_path: Path, name: str, overlay: str | None = None) -> Path:

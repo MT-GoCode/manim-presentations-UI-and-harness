@@ -4,7 +4,6 @@ stops firing after a Manim upgrade."""
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +22,12 @@ SETTINGS = Settings(
     min_text=0.0,
     min_tex=0.0,
 )
+
+
+@pytest.fixture(autouse=True)
+def in_tmp_path(tmp_path, monkeypatch):
+    """Manim's default media, text and TeX folders are relative to the cwd (render_config restores them)."""
+    monkeypatch.chdir(tmp_path)
 
 
 def digests(build_scene) -> list[tuple[str, int]]:
@@ -215,7 +220,7 @@ def tee_run(build_scene, first: int) -> tuple[list[str], float, dict[int, str], 
     clip.render_config(SETTINGS)
     pass1 = [d for d, _ in digests(build_scene)]
     out: list[str] = []
-    with tempconfig({"from_animation_number": first, "media_dir": tempfile.mkdtemp()}):
+    with tempconfig({"from_animation_number": first}):
 
         class S(Scene):
             def construct(self):
@@ -275,7 +280,7 @@ def first_frame_vs_raster(build_scene) -> tuple[np.ndarray, np.ndarray]:
     """(the canonical raster at the first play's capture point, the pixels Manim actually drew for that frame)."""
     clip.render_config(SETTINGS)
     captured: dict[str, np.ndarray] = {}
-    with tempconfig({"media_dir": tempfile.mkdtemp()}):
+    with tempconfig({}):
 
         class S(Scene):
             def construct(self):
@@ -294,13 +299,23 @@ def first_frame_vs_raster(build_scene) -> tuple[np.ndarray, np.ndarray]:
     return captured["raster"], captured["drawn"]
 
 
+def static_under_moving(s):
+    """Manim draws a play's static mobjects before its moving ones, whatever their z_index: the raised square is
+    under the moving circle."""
+    s.add(Square(color=BLUE).set_fill(BLUE, 1).set_z_index(1))
+    c = Circle(color=RED).set_fill(RED, 1)
+    s.add(c)
+    s.play(c.animate.shift([0.01, 0, 0]))
+
+
 @pytest.mark.parametrize(
     "build_scene",
     [
         lambda s: (s.add(Square(color=BLUE)), s.play(FadeIn(Circle(color=RED)))),  # a moving play's frame 0
         lambda s: (s.add(Square(color=BLUE)), s.wait(0.2)),  # a frozen wait's frame
+        static_under_moving,
     ],
-    ids=["play", "frozen-wait"],
+    ids=["play", "frozen-wait", "static-under-moving"],
 )
 def test_the_start_capture_point_is_exactly_frame_0(build_scene):
     raster, drawn = first_frame_vs_raster(build_scene)
@@ -395,20 +410,25 @@ def test_text_transformed_into_a_non_text_slot_is_marked(size_hooks):
         s.play(Transform(two, VGroup(Text("x", font_size=40), Square(0.3))))  # text where the target has none
         return two
 
-    assert getattr(played(run), "_mpres_size_mismatch", False)
+    a, b = played(run)
+    assert getattr(a, "_mpres_size_mismatch", False) and getattr(b, "_mpres_size_mismatch", False)
 
 
-def test_replacement_transform_leaves_no_shadow(size_hooks):
-    from manim import ReplacementTransform, Text
+def test_a_source_that_leaves_the_screen_takes_no_shadow(size_hooks):
+    """FadeTransform restores its source and takes it off screen (its mobject is a group of the source and a target
+    copy, two texts against one). Shown again later, the source is its own 16 and is not marked mismatched."""
+    from manim import FadeTransform, Text
 
     def run(s):
         a, b = Text("a", font_size=16), Text("b", font_size=48)
         s.add(a)
-        s.play(ReplacementTransform(a, b))
-        return b
+        s.play(FadeTransform(a, b))
+        s.add(a)
+        return a, b
 
-    b = played(run)
-    assert not hasattr(b, "_mpres_ref") and manim_hooks.font_size(b) == pytest.approx(48)
+    a, b = played(run)
+    assert not getattr(a, "_mpres_size_mismatch", False)
+    assert manim_hooks.font_size(a) == pytest.approx(16) and manim_hooks.font_size(b) == pytest.approx(48)
 
 
 def test_the_shadow_changes_no_frame(monkeypatch):

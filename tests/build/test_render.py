@@ -10,7 +10,7 @@ from pathlib import Path
 
 import av
 import numpy as np
-from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, TEST_WORKERS_WIDE
+from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, TEST_WORKERS_WIDE, render_peak
 
 from manim_presentations.script import load
 
@@ -90,7 +90,7 @@ def test_workers_1_and_wide_give_byte_identical_clips(talk, tmp_path):
     shutil.copytree(one, wide)
     ok(build(one, 1))
     r = ok(build(wide, TEST_WORKERS_WIDE))
-    assert f"peak alive {TEST_WORKERS_WIDE}" in r.stdout  # real concurrency, not just the flag
+    assert render_peak(r) == TEST_WORKERS_WIDE  # real concurrency, not just the flag
     assert clips(one) == clips(wide)
     for root in (one, wide):  # and an edit spanning four chapters, rendered concurrently again
         edit(root / "chapters" / "marks.py", "Square(1.5)", "Square(1.6)")
@@ -99,7 +99,7 @@ def test_workers_1_and_wide_give_byte_identical_clips(talk, tmp_path):
         edit(root / "chapters" / "closures.py", "run_time=1)", "run_time=1.2)")
     ok(build(one, 1))
     r = ok(build(wide, TEST_WORKERS_WIDE))
-    assert f"peak alive {TEST_WORKERS_WIDE}" in r.stdout
+    assert render_peak(r) == TEST_WORKERS_WIDE
     assert clips(one) == clips(wide)
 
 
@@ -200,6 +200,7 @@ def test_a_build_waits_for_a_reader_before_it_commits(talk):
 
     root = talk("edge")
     ok(build(root))
+    before = index(root)
     edit(root / "chapters" / "text.py", 'Text("Edge"', 'Text("Edges"')
     fd = os.open(root / "build" / ".clips.lock", os.O_RDWR | os.O_CREAT)
     fcntl.flock(fd, fcntl.LOCK_SH)  # what shots/export hold while they read clips
@@ -211,10 +212,14 @@ def test_a_build_waits_for_a_reader_before_it_commits(talk):
         seen.append(line)
         if line.startswith("commit: waiting for shots/export"):
             break
-    assert (root / "build" / "index.json").exists() and "Edges" not in json.dumps(index(root))
-    os.close(fd)
+    try:  # nothing of the new build is committed, and nothing of the old one is collected, while a reader holds on
+        assert index(root) == before
+        assert all((root / "build" / "clips" / f"{b['clip']}.mp4").exists() for b in before["beats"])
+    finally:
+        os.close(fd)
     out = p.communicate(timeout=SUBPROCESS_TIMEOUT)[0]
     assert p.returncode == 0, "".join(seen) + out
+    assert index(root)["build_id"] != before["build_id"]
 
 
 def test_workers_peak_rss_stays_under_the_estimate(talk):

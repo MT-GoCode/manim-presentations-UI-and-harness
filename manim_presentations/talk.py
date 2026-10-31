@@ -33,7 +33,7 @@ from manim_presentations import manim_hooks
 from manim_presentations.clip import RecordContext
 from manim_presentations.records import Animation, BeatKind, Box, LoopBeat, PlainBeat, Unit
 
-GLYPHS = (Text, MarkupText, SingleStringMathTex, DecimalNumber, Paragraph)  # every leaf under these is a glyph
+GLYPHS = (Text, MarkupText, SingleStringMathTex, DecimalNumber, Paragraph, Typst)  # every leaf under these is a glyph
 BACKGROUND = (NumberPlane, Axes)  # their lines never count for overlap
 SAMPLES_PER_CURVE = 8  # chords per cubic: a 45° arc in 8 chords strays 0.0012·r from the curve, under half a pixel
 #                        up to r = 3 (vendored from Explainers' lesson.py)
@@ -194,7 +194,13 @@ class Pass1Talk(Talk):
             b.rasters = (f"{b.slug}.start.npy", f"{b.slug}.end.npy")
 
     def _close(self) -> None:
-        self.beats[-1].end = self._end_state()
+        b = self.beats[-1]
+        if b.kind == "loop" and not b.animations:  # a loop needs a first frame and an end state to compare
+            raise TalkError(
+                f'{manim_hooks.chapter_path(str(self.chapter), self.root)}:{b.line} loop "{b.slug}" has no '
+                "animation; give it one (talk.wait() holds the frame)"
+            )
+        b.end = self._end_state()
 
     def _end_state(self) -> tuple[Unit, ...]:
         units: list[Unit] = []

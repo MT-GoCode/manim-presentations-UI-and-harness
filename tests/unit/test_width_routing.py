@@ -13,5 +13,5 @@ def test_ram_exceeded_refuses_without_workers(jobs):
 
 
 def test_workers_overrides_exactly():
-    assert build.width_for("render", 1, 3, 1.0, 2**60) == 1
-    assert build.width_for("render", 5, 3, 1.0, 2**60) == 5
+    assert build.width_for("render", 1, 3, 1.0, 2**60) == (1, "--workers")
+    assert build.width_for("render", 5, 3, 1.0, 2**60) == (5, "--workers")

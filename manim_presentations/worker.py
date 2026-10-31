@@ -44,12 +44,13 @@ def main(argv: list[str]) -> int:
     scene = Talk(snapshot_path / "chapters" / f"{slug}.py", snapshot_path, title, clip.TeeContext)
     manim_hooks.exact_fast_forward(scene)
     play = scene.play
+    progress = (out_path / "progress").open("w", buffering=1)  # its own file: chapter code may print to stdout
 
-    def reporting(*a: object, **k: object) -> None:  # one line per rendered animation: the parent's progress line
+    def reporting(*a: object, **k: object) -> None:  # one line per rendered play index: the parent's progress line
         n = manim_hooks.play_index(scene)
         play(*a, **k)
         if n >= int(first):
-            print(f"animation {n}", flush=True)
+            progress.write(f"{n}\n")
 
     scene.play = reporting
     scene.render()

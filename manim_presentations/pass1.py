@@ -61,7 +61,7 @@ class ReadGuard:
             if cannot_read(args[2]):  # only reads are checked; writes are confined by dry_run and media_dir
                 return
         roots = self.roots + (self.listing_roots if event != "open" else ())
-        if p != self.tempdir and not any(p == r or p.startswith(r + os.sep) for r in roots):
+        if not (event == "open" and p == self.tempdir) and not any(p == r or p.startswith(r + os.sep) for r in roots):
             self.violations.append(p)
             raise PermissionError(f"a talk reads only files inside its own folder; {p} is outside it")
 
