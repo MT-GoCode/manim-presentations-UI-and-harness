@@ -28,11 +28,11 @@ class Beat:
     @property
     def narration(self) -> str:
         """What is spoken: the text without its `> ` note lines."""
-        return "\n".join(line for line in self.text.split("\n") if not _is_note(line)).strip("\n")
+        return "\n".join(line for line in self.text.split("\n") if not is_note(line)).strip("\n")
 
     @property
     def notes(self) -> str:
-        return "\n".join(line[2:] for line in self.text.split("\n") if _is_note(line))
+        return "\n".join(line[2:] for line in self.text.split("\n") if is_note(line))
 
 
 @dataclass(frozen=True)
@@ -60,13 +60,14 @@ class Script:
         return found
 
 
-def _is_note(line: str) -> bool:
+def is_note(line: str) -> bool:
     return line.startswith("> ") or line == ">"
 
 
 def _heading(content: str, line: int) -> tuple[str, str | None]:
     m = HEADING.fullmatch(content)
-    assert m is not None  # the pattern accepts any non-empty heading without a leading colon
+    if m is None:  # empty, or a colon before any slug
+        raise ValueError(f"script.md:{line} heading {content!r} has no slug (write `slug` or `slug: Title`)")
     slug, title = m["slug"].strip(), m["title"]
     if not SLUG.fullmatch(slug):
         raise ValueError(f"script.md:{line} bad slug {slug!r} (use a-z, 0-9, -; then an optional `: Title`)")

@@ -65,6 +65,8 @@ def test_headings_inside_blockquote_and_list_are_text():
     [
         ("T\n\n# Bad Slug\n", "bad slug"),
         ("T\n\n# a: ok\n\n## Bad: no\n", "bad slug"),
+        ("T\n\n# a\n\n##\n", "has no slug"),  # an editor mid-keystroke: `##` typed, the slug not yet
+        ("T\n\n# : Title\n", "has no slug"),
         ("T\n\n# a\n\n# a\n", "duplicate"),
         ("T\n\n## a\n", "before any"),
         ("# a\n", "title"),

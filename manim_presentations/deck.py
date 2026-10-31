@@ -258,6 +258,11 @@ class Layout:
         return fd
 
     @property
+    def audience_log(self) -> Path:
+        """The Audience process's stdout and stderr, truncated at each launch; outside .media, which builds wipe."""
+        return self.build / "audience.log"
+
+    @property
     def export_tmp(self) -> Path:
         """Scratch for `mpres export`'s re-encodes, outside .media, so a concurrent build's wipe never touches it."""
         return self.build / ".export"
@@ -296,6 +301,7 @@ class Deck:
     render: Render
     beats: tuple[BuiltBeat, ...]
     stale: tuple[str, ...]  # talk files whose bytes differ from the build's, or that were added or removed
+    structure: script.Structure  # the script.md structure the build was made from
     structure_mismatch: bool  # script.md's chapters, beats or titles differ from the build's
 
     @classmethod
@@ -329,7 +335,8 @@ class Deck:
             render=index.render,
             beats=beats,
             stale=stale,
-            structure_mismatch=structure_mismatch(root, index),
+            structure=index.structure,
+            structure_mismatch=structure_mismatch((root / "script.md").read_text(encoding="utf-8"), index.structure),
         )
 
 
@@ -344,10 +351,10 @@ def why_not(none: NoPrevious, root: Path) -> str:
             )
 
 
-def structure_mismatch(root: Path, index: Index) -> bool:
+def structure_mismatch(text: str, built: script.Structure) -> bool:
     """script.md's chapters, beats and titles against the build's. The one comparison: the CLI refuses on it, and the
-    Presenter's script.md watcher shows it."""
-    return script.load(root / "script.md").structure != index.structure
+    Presenter's script.md watcher shows it. Raises ValueError for a script.md that does not parse."""
+    return script.parse(text).structure != built
 
 
 def require_fresh(deck: Deck) -> None:

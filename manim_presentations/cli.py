@@ -57,6 +57,31 @@ def run_shots(root: Path, args: argparse.Namespace) -> int:
         return 1
 
 
+def run_present(root: Path, args: argparse.Namespace) -> int:
+    from manim_presentations import protocol
+    from manim_presentations.deck import Busy, Deck, IncompatibleBuild, Stale
+
+    try:
+        deck = Deck.open(root)
+    except IncompatibleBuild as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    slugs = tuple(b.slug for b in deck.beats)
+    if args.start is not None and args.start not in slugs:
+        print(f"error: --from {args.start}: no such beat; the beats are: {' '.join(slugs)}", file=sys.stderr)
+        return 2
+    from manim_presentations.presenter import present
+
+    try:
+        return present(deck, None if args.start is None else protocol.before(args.start, slugs))
+    except Busy:
+        print(f"error: {root} is already being presented", file=sys.stderr)
+        return 3
+    except Stale as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mpres", description="Build, present, screenshot and export Manim talks.")
     sub = p.add_subparsers(dest="command", metavar="command")
@@ -70,6 +95,10 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--out", metavar="DIR", help="output folder (default: /tmp/mpres-shots/<talk>-<hash>/)")
     s.add_argument("--workers", type=positive, metavar="N", help=workers)
     s.set_defaults(run=run_shots)
+    pr = sub.add_parser("present", help="present the built talk: a Presenter View and an Audience View to share")
+    pr.add_argument("talk", help="path to a <name>.manim-presentation folder")
+    pr.add_argument("--from", dest="start", metavar="BEAT", help="start just before this beat (its slug)")
+    pr.set_defaults(run=run_present)
     return p
 
 

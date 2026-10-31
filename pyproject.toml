@@ -106,7 +106,7 @@ name = "dependencies point one way: entry points over the scene side over the le
 type = "layers"
 layers = [
     "manim_presentations.cli",
-    "manim_presentations.build",
+    "manim_presentations.build | manim_presentations.presenter",
     "manim_presentations.worker",
     "manim_presentations.pass1",
     "manim_presentations.talk",
@@ -144,3 +144,12 @@ name = "shots reads the deck and decodes stills; it never builds"
 type = "forbidden"
 source_modules = ["manim_presentations.shots"]
 forbidden_modules = ["manim_presentations.build", "manim_presentations.clip", "manim_presentations.talk", "manim_presentations.pass1", "manim_presentations.worker", "manim_presentations.manim_hooks", "manim"]
+
+[[tool.importlinter.contracts]]
+name = "present never imports Manim or the render side"
+type = "forbidden"
+source_modules = ["manim_presentations.presenter"]
+forbidden_modules = [
+    "manim", "av", "cairo", "manim_presentations.build", "manim_presentations.worker", "manim_presentations.pass1",
+    "manim_presentations.talk", "manim_presentations.manim_hooks", "manim_presentations.clip", "manim_presentations.audience",
+]
