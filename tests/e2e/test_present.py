@@ -405,11 +405,12 @@ def test_a_sigterm_during_startup_closes_everything(talk):
         text=True,
         env=env,
     )
+    stuck = threading.Timer(LAUNCH_MS / 1000, proc.kill)  # a present that never prints its line fails, not hangs
+    stuck.start()
     try:
         assert proc.stdout is not None
-        for line in proc.stdout:
-            if line.startswith("present: opening"):
-                break
+        assert any(line.startswith("present: opening") for line in proc.stdout), "present never started"
+        stuck.cancel()
         proc.send_signal(signal.SIGTERM)
         time.sleep(QUIET_MS / 1000)  # the signal lands while the deck read is blocked
     finally:

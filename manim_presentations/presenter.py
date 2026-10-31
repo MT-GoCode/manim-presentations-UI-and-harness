@@ -113,8 +113,9 @@ class FatalSaid:
     reason: str
 
 
-# What this connection has told the Presenter, set where each message is decoded; a drop routes on it alone.
-# "quit" and "replace" are the Presenter's own Quit: on purpose, or to an Audience of other code (relaunched).
+# Why this connection will end, set once where it is decided; a drop routes on it alone. "hello" and "closed" are what
+# the Audience said. "quit" and "replace" are the Presenter's own Quit (on purpose, or to an adopted Audience of other
+# code, relaunched); a FatalSaid is the Audience's Fatal, or the Presenter's Quit to one it launched with other code.
 Told = Literal["nothing", "hello", "closed", "quit", "replace"] | FatalSaid
 
 
@@ -205,7 +206,7 @@ class Link(QObject):
         *lines, self.buffer = self.buffer.split(b"\n")
         for line in lines:
             if self.told in ("quit", "replace") or isinstance(self.told, FatalSaid):
-                return  # after our own Quit nothing this connection says changes why it ends (Quit sends Closed)
+                return  # once the end is decided (our Quit, or a Fatal), nothing more on this connection changes it
             raw = json.loads(line)
             if raw["type"] == "hello" and raw["protocol"] != p.AUDIENCE_CODE:
                 # Decoded by that one field: an Audience of other code may not speak this union at all. One this
