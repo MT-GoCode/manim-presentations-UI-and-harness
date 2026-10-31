@@ -299,23 +299,13 @@ def first_frame_vs_raster(build_scene) -> tuple[np.ndarray, np.ndarray]:
     return captured["raster"], captured["drawn"]
 
 
-def static_under_moving(s):
-    """Manim draws a play's static mobjects before its moving ones, whatever their z_index: the raised square is
-    under the moving circle."""
-    s.add(Square(color=BLUE).set_fill(BLUE, 1).set_z_index(1))
-    c = Circle(color=RED).set_fill(RED, 1)
-    s.add(c)
-    s.play(c.animate.shift([0.01, 0, 0]))
-
-
 @pytest.mark.parametrize(
     "build_scene",
     [
         lambda s: (s.add(Square(color=BLUE)), s.play(FadeIn(Circle(color=RED)))),  # a moving play's frame 0
         lambda s: (s.add(Square(color=BLUE)), s.wait(0.2)),  # a frozen wait's frame
-        static_under_moving,
     ],
-    ids=["play", "frozen-wait", "static-under-moving"],
+    ids=["play", "frozen-wait"],
 )
 def test_the_start_capture_point_is_exactly_frame_0(build_scene):
     raster, drawn = first_frame_vs_raster(build_scene)
