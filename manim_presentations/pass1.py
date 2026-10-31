@@ -49,7 +49,8 @@ class ReadGuard:
         self.active = False
         self.violations: list[str] = []
         self.cache_entries: set[str] = set()
-        self.inputs: set[str] = set()  # snapshot-relative: files opened, and folders listed (as "dir/")
+        self.inputs: set[str] = set()  # snapshot-relative: files opened or stat'ed, and folders listed (as "dir/")
+        self.noting = False
 
     def __call__(self, event: str, args: tuple[Any, ...]) -> None:
         if not self.active or event not in READ_EVENTS:
@@ -80,8 +81,12 @@ class ReadGuard:
         `.stat()` decide what a chapter draws as surely as a read does."""
 
         def noted(path: Any, *args: Any, **kwargs: Any) -> Any:
-            if self.active and isinstance(path, (str, bytes, os.PathLike)):
-                self.note(realpath(os.fsdecode(path)), listed=False)
+            if self.active and not self.noting and isinstance(path, (str, bytes, os.PathLike)):
+                self.noting = True  # realpath stats too: note only the chapter's own call
+                try:
+                    self.note(realpath(os.fsdecode(path)), listed=False)
+                finally:
+                    self.noting = False
             return real(path, *args, **kwargs)
 
         return noted
