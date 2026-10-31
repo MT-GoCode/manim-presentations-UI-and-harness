@@ -75,6 +75,7 @@ def test_settings_titles_and_the_engine_run_every_chapter(prebuilt, tmp_path):
     assert ran(root, lambda r: script.write_text("\n".join([lines[0] + " (renamed)", *lines[1:]]))) == set(CHAPTERS)
     pkg = tmp_path / "engine" / "manim_presentations"
     shutil.copytree(REPO / "manim_presentations", pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    (pkg.parent / ".tinytex").symlink_to(REPO / ".tinytex")  # the engine finds its TeX beside its package
     (pkg / "talk.py").write_text((pkg / "talk.py").read_text() + "\n# an engine edit\n")
     assert ran(root, lambda r: None, env={"PYTHONPATH": str(pkg.parent)}) == set(CHAPTERS)
 
