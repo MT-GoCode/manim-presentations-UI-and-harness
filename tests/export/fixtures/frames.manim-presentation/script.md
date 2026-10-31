@@ -12,7 +12,7 @@ Narration of beat A, spoken aloud.
 
 Narration of beat B, spoken aloud.
 
-# two: Second chapter
+# two
 
 ## c: Beat C loops
 

@@ -51,8 +51,15 @@ def test_the_jump_list_shows_titles_by_chapter(player):
     )
     assert groups == [
         ["First chapter", ["Beat A", "Beat B </script> ends no script"]],
-        ["Second chapter", ["Beat C loops", "d"]],
+        ["two", ["Beat C loops", "d"]],
     ]
+
+
+def test_the_jump_list_follows_the_position_so_a_jump_back_works(player, frames):
+    player.transition(lambda: player.page.select_option("#jump", "d"), 0, 3, frames[3] - 1)
+    player.transition(press(player, "ArrowUp"), 3, 2, 0)
+    assert player.page.eval_on_selector("#jump", "s => s.value") == "c"  # so picking d again is a real change
+    player.transition(lambda: player.page.select_option("#jump", "d"), 2, 3, frames[3] - 1)
 
 
 def test_a_boundary_flashes_and_changes_nothing(player):
@@ -130,6 +137,8 @@ def test_a_clip_that_fails_to_load_says_so_and_the_last_frame_stays(open_player,
     assert p.front()[0] == 0 and p.videos() == 1  # beat a stays on screen; the failed element is gone
     assert len(p.errors) == 1 and "clip 1 failed to load" in p.errors[0], p.errors
     p.errors.clear()
+    p.transition(press(p, "ArrowDown"), 0, 2, 0)  # past the broken clip, a clip that plays clears the failure
+    assert not p.page.evaluate("document.body.classList.contains('failed')") and p.page.text_content("#status") == ""
 
 
 def test_a_broken_clip_passed_over_by_fast_presses_is_never_reported(open_player, exported, tmp_path):

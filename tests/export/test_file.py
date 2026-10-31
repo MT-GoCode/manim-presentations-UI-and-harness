@@ -57,7 +57,7 @@ def test_every_frame_of_every_beat_is_the_builds_frame_at_the_asked_size(frames_
             assert codes == [i << 8 | k for k in range(beat["frames"])], beat["slug"]
 
 
-def test_height_defaults_to_the_source_and_refuses_above_it(frames_talk, tmp_path):
+def test_height_accepts_the_source_height_and_refuses_above_it(frames_talk, tmp_path):
     refused(export(frames_talk, tmp_path / "a.html", "--height", "272"), "--height 272 is above the source height 270")
     assert not (tmp_path / "a.html").exists()
     assert export(frames_talk, tmp_path / "b.html", "--height", "270").returncode == 0

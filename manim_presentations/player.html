@@ -89,6 +89,8 @@ function show({beat, frame, play}) {
   v.addEventListener("seeked", () => {
     if (mine !== shows) return release(v);
     v.style.zIndex = 1;
+    document.body.classList.remove("failed");  // a clip that plays clears an earlier failure
+    notice.textContent = "";
     if (front) release(front);
     front = v;
     if (play) v.play().catch((e) => { if (e.name !== "AbortError") throw e; });  // AbortError: a newer show paused it

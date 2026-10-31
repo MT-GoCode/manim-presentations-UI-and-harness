@@ -8,7 +8,6 @@ import html
 import json
 import multiprocessing
 import os
-import shutil
 import tempfile
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
@@ -76,65 +75,65 @@ def encode(src: Path, dst: Path, width: int, height: int, crf: int, fps: int) ->
 def export(root: Path, out: Path, height: int | None, crf: int | None, transcript: str, workers: int | None) -> int:
     layout = Layout(root)
     layout.export_tmp.mkdir(parents=True, exist_ok=True)
-    tmp = Path(tempfile.mkdtemp(dir=layout.export_tmp))
     # Beside --out (os.replace needs one filesystem), and this run's own: two exports to one --out never share it.
     fd, name = tempfile.mkstemp(dir=out.parent, prefix=f".{out.name}.", suffix=".tmp")
     os.close(fd)  # the name is reserved; the page is written to it later
     partial = Path(name)
     try:
-        with layout.clips_shared():  # no commit can collect the clips between opening the deck and reading them
-            deck = Deck.open(root)
-            require_fresh(deck)
-            talk = script.load(root / "script.md")  # the structure require_fresh just compared
-            r = deck.render
-            if height is not None and height > r.pixel_height:
-                raise ExportError(f"--height {height} is above the source height {r.pixel_height}")
-            h = height or min(H0, r.pixel_height)
-            w = 2 * round(h * r.pixel_width / r.pixel_height / 2)
-            crf = C0 if crf is None else crf
-            say(f"export: height {h} · width {w} · crf {crf}")
-            ram = encode_ram(r.pixel_width * r.pixel_height / 1e6, w * h / 1e6)
-            n = headroom.choose("export", workers, len(deck.beats), ENCODE_CORES, ram, say)
-            clips = [tmp / f"{i}.mp4" for i in range(len(deck.beats))]
-            pool = ProcessPoolExecutor(n, mp_context=multiprocessing.get_context("spawn"))  # spawn: no forked locks
-            try:
-                job = functools.partial(encode, width=w, height=h, crf=crf, fps=r.fps)
-                for k, _ in enumerate(pool.map(job, [b.clip for b in deck.beats], clips), 1):
-                    say(f"encoded {k}/{len(clips)}")
-            finally:
-                pool.shutdown(cancel_futures=True)  # a failed encode does not wait for the queued ones
-        manifest = {
-            "title": talk.title,
-            "fps": r.fps,
-            "chapters": [
-                [c.slug, c.title or c.slug] for c in talk.chapters
-            ],  # a list: JS orders integer-like keys first
-            "keys": {key: a for q, a in protocol.KEYS.items() for key in DOM_KEY[q]},
-            "transcript": transcript,
-            "beats": [
-                {
-                    "chapter": b.chapter,
-                    "slug": b.slug,
-                    "title": b.title or b.slug,
-                    "kind": b.kind,
-                    "frames": b.frames,
-                    **TRANSCRIPT[transcript](talk.beat(b.slug)),
-                }
-                for b in deck.beats
-            ],
-        }
-        safe = json.dumps(manifest).replace("</", "<\\/")  # no string in it can close the script element
-        page_html = PLAYER.read_text(encoding="utf-8").replace(TITLE, html.escape(talk.title))
-        head, tail = page_html.split(MANIFEST)
-        with partial.open("w", encoding="utf-8") as page:  # streamed: a long talk's clips never sit in memory at once
-            page.write(f'{head}<script type="application/json" id="manifest">{safe}</script>\n')
-            for i, c in enumerate(clips):
-                b64 = base64.b64encode(c.read_bytes()).decode()
-                page.write(f'<script type="application/octet-stream" id="clip-{i}">{b64}</script>\n')
-            page.write(tail)
-        os.replace(partial, out)
+        with tempfile.TemporaryDirectory(dir=layout.export_tmp) as scratch:  # removed however this ends
+            tmp = Path(scratch)
+            with layout.clips_shared():  # no commit can collect the clips between opening the deck and reading them
+                deck = Deck.open(root)
+                require_fresh(deck)
+                talk = script.load(root / "script.md")  # the structure require_fresh just compared
+                r = deck.render
+                if height is not None and height > r.pixel_height:
+                    raise ExportError(f"--height {height} is above the source height {r.pixel_height}")
+                h = height or min(H0, r.pixel_height)
+                w = 2 * round(h * r.pixel_width / r.pixel_height / 2)
+                crf = C0 if crf is None else crf
+                say(f"export: height {h} · width {w} · crf {crf}")
+                ram = encode_ram(r.pixel_width * r.pixel_height / 1e6, w * h / 1e6)
+                n = headroom.choose("export", workers, len(deck.beats), ENCODE_CORES, ram, say)
+                clips = [tmp / f"{i}.mp4" for i in range(len(deck.beats))]
+                pool = ProcessPoolExecutor(n, mp_context=multiprocessing.get_context("spawn"))  # spawn: no forked locks
+                try:
+                    job = functools.partial(encode, width=w, height=h, crf=crf, fps=r.fps)
+                    for k, _ in enumerate(pool.map(job, [b.clip for b in deck.beats], clips), 1):
+                        say(f"encoded {k}/{len(clips)}")
+                finally:
+                    pool.shutdown(cancel_futures=True)  # a failed encode does not wait for the queued ones
+            manifest = {
+                "title": talk.title,
+                "fps": r.fps,
+                "chapters": [
+                    [c.slug, c.title or c.slug] for c in talk.chapters
+                ],  # a list: JS orders integer-like keys first
+                "keys": {key: a for q, a in protocol.KEYS.items() for key in DOM_KEY[q]},
+                "transcript": transcript,
+                "beats": [
+                    {
+                        "chapter": b.chapter,
+                        "slug": b.slug,
+                        "title": b.title or b.slug,
+                        "kind": b.kind,
+                        "frames": b.frames,
+                        **TRANSCRIPT[transcript](talk.beat(b.slug)),
+                    }
+                    for b in deck.beats
+                ],
+            }
+            safe = json.dumps(manifest).replace("</", "<\\/")  # no string in it can close the script element
+            page_html = PLAYER.read_text(encoding="utf-8").replace(TITLE, html.escape(talk.title))
+            head, tail = page_html.split(MANIFEST)
+            with partial.open("w", encoding="utf-8") as page:  # streamed: no long talk in memory at once
+                page.write(f'{head}<script type="application/json" id="manifest">{safe}</script>\n')
+                for i, c in enumerate(clips):
+                    b64 = base64.b64encode(c.read_bytes()).decode()
+                    page.write(f'<script type="application/octet-stream" id="clip-{i}">{b64}</script>\n')
+                page.write(tail)
+            os.replace(partial, out)
     finally:
-        shutil.rmtree(tmp)
         partial.unlink(missing_ok=True)
     say(f"exported {out} · {out.stat().st_size // 1024} KiB · {len(deck.beats)} beats")
     return 0
