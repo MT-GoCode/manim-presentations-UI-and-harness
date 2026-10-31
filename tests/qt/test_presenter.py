@@ -489,12 +489,23 @@ def test_a_report_about_another_clip_is_not_shown(talk, open_, qtbot):
 
 
 def test_a_word_wider_than_the_editor_shrinks_the_text(talk, open_, qtbot):
+    """Through a window resize, as live: the refit must read the editor's new size, not the one before the resize."""
     window = open_(talk)
-    window.resize(1728, 1117)  # the editor column fits this word above the floor
     window.go(p.At(slug="the-idea"), "show")
     window.editor.setPlainText("Antidisestablishmentarianism")
-    window.fit()
-    assert window.editor.document().idealWidth() <= window.editor.viewport().width()
+    window.showNormal()
+    window.resize(1728, 1117)
+    qtbot.wait(QUIET_MS)
+    window.fit()  # fitted to the wide editor
+    wide = window.editor.document().idealWidth()
+    window.resize(1400, 1117)  # narrower, still above the floor for this word: it must shrink to fit again
+    qtbot.waitUntil(lambda: window.editor.viewport().width() < wide, timeout=WAIT_MS)  # the old fit no longer fits
+
+    def fits():
+        return window.editor.document().idealWidth() <= window.editor.viewport().width()
+
+    qtbot.waitUntil(fits, timeout=WAIT_MS)
+    assert window.editor.horizontalScrollBar().maximum() == 0
 
 
 def test_a_presenter_lock_held_briefly_is_waited_for(talk, open_):
@@ -529,3 +540,19 @@ def test_an_exception_in_a_slot_is_shown_red(talk, open_, monkeypatch):
     presenter.report_errors(window)
     sys.excepthook(KeyError, KeyError("no such beat"), None)
     assert red(window) and "KeyError: 'no such beat'" in window.status.text()
+
+
+def test_an_audience_dropping_after_the_window_is_gone_reaches_nothing(talk, qtbot, qapp):
+    """The Link goes with its window: a late drop must not call into deleted widgets (pytest-qt fails on any slot
+    exception)."""
+    window = presenter.open_presenter(talk, None)
+    qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
+    pid, fd = window.link.pid, window.lock_fd
+    assert pid is not None
+    qapp.removeEventFilter(window)
+    window.deleteLater()  # destroyed without closing: no Quit, the Audience is still connected
+    qtbot.wait(QUIET_MS)
+    os.kill(pid, signal.SIGKILL)  # its socket drops now
+    os.waitpid(pid, 0)
+    os.close(fd)
+    qtbot.wait(QUIET_MS)

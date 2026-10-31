@@ -129,8 +129,9 @@ class Link(QObject):
         received: Callable[[p.NowCovered | p.NowAt | p.Hello | p.Failed | p.Key], None],
         trouble: Callable[[str | None], None],
         lost: Callable[[], None],
+        window: QObject,
     ):
-        super().__init__()
+        super().__init__(window)  # destroyed with the window: no event reaches it after it is gone
         self.root, self.title, self.received, self.trouble, self.lost = root, title, received, trouble, lost
         self.name = socket_path(root)
         self.pid: int | None = None  # the Audience this Presenter launched and has not reaped; None for an adopted one
@@ -320,7 +321,7 @@ class Presenter(QMainWindow):
         self.last_sent: Shown | None = None  # what the Audience was last told to show, or adopted as showing
         self.opening = False  # a Deck.open of a new build is running off the GUI thread
         self.lock_fd = -1  # the presenter lock, set by open_presenter
-        self.link = Link(self.root, self.title_text, self.received, self.audience_trouble, self.audience_lost)
+        self.link = Link(self.root, self.title_text, self.received, self.audience_trouble, self.audience_lost, self)
         self.opened.connect(self.hot_swap)
         self.open_failed.connect(self.open_failed_with)
         self._build_ui()
@@ -683,12 +684,11 @@ class Presenter(QMainWindow):
         else:
             self.amber.pop("overflow", None)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self.fit()
-
     # --- keys: one application filter routes the five mapped keys before any widget sees them ---
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self.editor.viewport() and event.type() == QEvent.Type.Resize:
+            self.refit.start()  # the editor's own new size, which a window resize reaches only after its own event
+            return False
         if not (isinstance(event, QKeyEvent) and event.type() == QEvent.Type.KeyPress):
             return False
         name = Qt.Key(event.key()).name.removeprefix("Key_")
