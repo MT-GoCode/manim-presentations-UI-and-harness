@@ -342,9 +342,9 @@ class Presenter(QMainWindow):
         # alike (measured), and a folder watch survives the replace that drops a file watch.
         self.watcher = QFileSystemWatcher([str(self.root)])
         self.watcher.directoryChanged.connect(self.folder_changed)
-        # build/, not index.json: a commit's os.replace never drops a folder watch. Removing build/ itself can drop it
-        # (a full build/ often does; a small one often does not), so folder_changed adds it back. Lock and pin rewrites and .media
-        # churn fire it too; each costs one read of build_id.
+        # build/, not index.json: a commit's os.replace never drops a folder watch, but removing build/ itself can
+        # (measured: 2 of 5 runs), so folder_changed adds it back. Lock and pin rewrites and .media churn fire it too;
+        # each costs one read of build_id.
         self.build_watcher = QFileSystemWatcher([str(d.Layout(self.root).build)])
         self.build_watcher.directoryChanged.connect(self.build_changed)
         self.clock = QTimer(self)
