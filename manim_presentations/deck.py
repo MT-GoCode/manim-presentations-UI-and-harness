@@ -18,9 +18,6 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from manim_presentations import script
 from manim_presentations.records import BeatKind
 
-EXCLUDED_DIRS = frozenset({"build", "__pycache__"})
-
-
 SCHEMA = 1  # the index format; any other value is a build this engine cannot read (NoPrevious, IncompatibleBuild)
 
 
@@ -118,13 +115,17 @@ class Layout:
         return self.build / ".cache" / cache_id
 
     def talk_files(self) -> list[Path]:
-        """The talk file set, relative paths, sorted: every file under the talk folder except build/, dot-entries,
-        __pycache__/ and root-level *.md (the talk README, and script.md, whose structure is compared separately and
-        which scene code never reads)."""
+        """The talk file set, relative paths, sorted: every file under the talk folder except the root's build/,
+        dot-entries, __pycache__/ and root-level *.md (the talk README, and script.md, whose structure is compared
+        separately and which scene code never reads)."""
         out: list[Path] = []
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in EXCLUDED_DIRS)
             here = Path(dirpath).relative_to(self.root)
+            dirnames[:] = sorted(
+                d
+                for d in dirnames
+                if not d.startswith(".") and d != "__pycache__" and not (here == Path(".") and d == "build")
+            )
             for f in filenames:
                 if f.startswith(".") or (here == Path(".") and f.endswith(".md")):
                     continue
@@ -174,27 +175,20 @@ class Layout:
         with self._flock(".clips.lock", fcntl.LOCK_SH):
             yield
 
-    @contextlib.contextmanager
-    def clips_exclusive(self, on_wait: Callable[[], None]) -> Generator[None]:
+    def clips_exclusive(self, on_wait: Callable[[], None]) -> contextlib.AbstractContextManager[None]:
         """A build's commit and GC, blocking until readers finish (`on_wait` runs once if it has to wait)."""
-        self.build.mkdir(exist_ok=True)
-        fd = os.open(self.build / ".clips.lock", os.O_RDWR | os.O_CREAT)
-        try:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                on_wait()
-                fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
-        finally:
-            os.close(fd)
+        return self._flock(".clips.lock", fcntl.LOCK_EX, on_wait)
 
     @contextlib.contextmanager
-    def _flock(self, name: str, mode: int) -> Generator[None]:
+    def _flock(self, name: str, mode: int, on_wait: Callable[[], None] = lambda: None) -> Generator[None]:
         self.build.mkdir(exist_ok=True)
         fd = os.open(self.build / name, os.O_RDWR | os.O_CREAT)
         try:
-            fcntl.flock(fd, mode)
+            try:
+                fcntl.flock(fd, mode | fcntl.LOCK_NB)
+            except BlockingIOError:
+                on_wait()
+                fcntl.flock(fd, mode)
             yield
         finally:
             os.close(fd)

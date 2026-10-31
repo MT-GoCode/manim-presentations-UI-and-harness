@@ -10,11 +10,12 @@ Manim touches here (each tested one to one in tests/unit/test_hooks.py):
   `file_writer.add_partial_movie_file`, `begin_animation`, `end_animation` and `write_frame`;
 - the partial-file mapping: `file_writer.partial_movie_files`, one entry per play (None for skipped ones);
 - the loop-closure capture points: `renderer.render` (a play's first frame, after `update_to_time(0)`) and
-  `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws on a fresh, unpatched `Camera`
-  in Manim's order: the play's `static_mobjects`, then its `moving_mobjects` (which include the foreground);
+  `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws the scene's mobjects and
+  foreground on a fresh, unpatched `Camera` in one `capture_mobjects` call;
 - the size references: `Paragraph.__init__` (its Text lives off the scene family, in `lines_text`), and the
-  observation-only shadow on `Transform.clean_up_from_scene` (when its mobject stays on screen) and `Mobject.become`:
-  the text classes' own `initial_height`, `font_size`, `height` and `submobjects` are read, never written."""
+  observation-only shadow on `Transform.clean_up_from_scene` (FadeTransform overrides it and restores its source;
+  TransformFromCopy gets the unshadowed one) and `Mobject.become`: the text classes' own `initial_height`,
+  `font_size`, `height` and `submobjects` are read, never written."""
 
 import sys
 from pathlib import Path
@@ -146,20 +147,15 @@ def on_first_frame(scene: Any, callback: Any) -> None:
 
 
 def canonical_raster(scene: Any) -> np.ndarray:
-    """The scene's current state drawn whole on a fresh camera (the Recorder never involved), in the z-order Manim
-    gives a frame: the current play's static mobjects, then its moving ones, then anything since added (a remover's
-    clean-up takes mobjects out of the scene but not out of the play's lists; a replacement's clean-up adds its
-    target to the scene but not to them)."""
+    """The scene's current state drawn whole on a fresh camera (the Recorder never involved). One call draws in
+    Manim's frame order: a play's static/moving split is a prefix/suffix of the z-sorted family list, and
+    capture_mobjects z-sorts each call. Only mobjects in the scene are drawn: a remover's clean-up takes its mobject
+    out of the scene but not out of the play's lists."""
     from manim.camera.camera import Camera
 
-    present = [*scene.mobjects, *(m for m in scene.foreground_mobjects if m not in scene.mobjects)]
-    static = [m for m in scene.static_mobjects or [] if m in present]
-    moving = [m for m in scene.moving_mobjects or [] if m in present]
-    rest = [m for m in present if m not in static and m not in moving]
     camera = Camera()
     camera.reset()
-    for group in (static, moving, rest):
-        camera.capture_mobjects(group)
+    camera.capture_mobjects([*scene.mobjects, *(m for m in scene.foreground_mobjects if m not in scene.mobjects)])
     return camera.pixel_array.copy()
 
 
@@ -171,9 +167,17 @@ def sized(m: Mobject) -> bool:
     return any(c.__name__ in SIZED for c in type(m).__mro__)
 
 
-def size_ref(m: Mobject) -> tuple[float, float]:
+class Mismatch:
+    """A node's size reference after a Transform or become paired it with a node of the other kind (size-checked or
+    not): unknown."""
+
+
+Ref = tuple[float, float] | Mismatch
+
+
+def size_ref(m: Mobject) -> Ref:
     """(reference height, the font size at that height). Manim's own: (initial_height, font_size · initial_height /
-    height), the size it was created at; or the shadow a Transform or become left on it."""
+    height), the size it was created at; or what the latest Transform or become left on it."""
     for ref in (getattr(m, "_mpres_ref", None), getattr(m, "_mpres_paragraph_ref", None)):
         if ref is not None:
             return ref
@@ -181,19 +185,30 @@ def size_ref(m: Mobject) -> tuple[float, float]:
     return initial, size * initial / m.height
 
 
+def mismatched(m: Mobject) -> bool:
+    return isinstance(getattr(m, "_mpres_ref", None), Mismatch)  # isinstance: Mobject.copy deep-copies the marker
+
+
 def font_size(m: Mobject) -> float:
     """The declared size now: the reference size scaled by how much the mobject grew since (later scale() calls stay
     reflected)."""
-    height, size = size_ref(m)
+    ref = size_ref(m)
+    assert not isinstance(ref, Mismatch), "a mismatched node has no declared size"
+    height, size = ref
     return size * m.height / height
 
 
 def install_size_references() -> None:
-    """Pass 1 only. Record Paragraph's reference at creation; after a Transform whose source stays on screen holding
-    the target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction), and after become,
-    give each size-checked node of the source the matching target node's reference, paired by family index. A count
-    mismatch is marked for the check to report."""
-    from manim import Paragraph, Transform
+    """Pass 1 only. Record Paragraph's reference at creation; after a Transform, whose source ends holding the
+    target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction, ReplacementTransform), and
+    after become, give each node of the source the reference of the target node whose points it took: Manim's own
+    pairing, by index over the two aligned families. A size-checked node paired with one that is not (a Text that now
+    draws a square, a Square that now draws glyphs) is marked for the check to report. TransformFromCopy ends at
+    interpolate(0), drawing its own points, so its mobject keeps its own references (alignment pads with copies of its
+    own nodes)."""
+    from inspect import signature
+
+    from manim import Paragraph, Transform, TransformFromCopy
 
     paragraph_init = Paragraph.__init__
 
@@ -201,31 +216,44 @@ def install_size_references() -> None:
         paragraph_init(self, *a, **k)
         setattr(self, "_mpres_paragraph_ref", (self.height, self.lines_text.font_size))
 
-    def take(source: Mobject, target: Mobject) -> None:
-        mine = [x for x in source.get_family() if sized(x)]
-        theirs = [x for x in target.get_family() if sized(x)]
-        if len(mine) != len(theirs):
-            setattr(source, "_mpres_size_mismatch", True)
-            return
-        refs = [size_ref(t) for t in theirs]  # read before writing: source and target may share nodes
-        for x, ref in zip(mine, refs, strict=True):
-            setattr(x, "_mpres_ref", ref)
+    def ref(x: Mobject, t: Mobject) -> Ref | None:
+        return Mismatch() if sized(x) != sized(t) else size_ref(t) if sized(t) else None
+
+    def take(source: Mobject, aligned_target: Mobject) -> None:
+        """Every node's one fact is rewritten, so the latest take wins."""
+        pairs = list(zip(source.get_family(), aligned_target.get_family(), strict=True))
+        refs = [ref(x, t) for x, t in pairs]  # read first: source and target may share nodes
+        for (x, _), r in zip(pairs, refs, strict=True):
+            setattr(x, "_mpres_ref", r)
 
     clean_up = Transform.clean_up_from_scene
 
     def shadowing_clean_up(self: Any, scene: Any) -> None:
         clean_up(self, scene)
-        if self.mobject in scene.get_mobject_family_members():
-            take(self.mobject, self.target_mobject)
+        take(self.mobject, self.target_copy)  # off screen too: a replaced source shown again holds the target
+
+    def align_structure(a: Mobject, b: Mobject) -> None:
+        """align_data's family alignment without its point alignment, which would rewrite a's points."""
+        a.null_point_align(b)
+        a.align_submobjects(b)
+        for x, y in zip(a.submobjects, b.submobjects, strict=True):
+            align_structure(x, y)
 
     become = Mobject.become
+    keywords = signature(become)
 
     def shadowing_become(self: Mobject, mobject: Mobject, *a: Any, **k: Any) -> Mobject:
-        refs_source = mobject
+        # With no true keyword, become aligns `mobject` itself, so it already pairs with self. With one, become aligns
+        # a private copy: align our own copy the same way (keywords only move points, never the family structure).
+        # The copy costs ~35× a bare become (6 ms for a line of Text), so it is made only when Manim makes one.
+        copies = any(list(keywords.bind(self, mobject, *a, **k).arguments.values())[2:])
+        target = mobject.copy() if copies else mobject
         out = become(self, mobject, *a, **k)
-        take(self, refs_source)
+        align_structure(self, target)
+        take(self, target)
         return out
 
     setattr(Paragraph, "__init__", recording_paragraph)
     setattr(Transform, "clean_up_from_scene", shadowing_clean_up)
+    setattr(TransformFromCopy, "clean_up_from_scene", clean_up)
     setattr(Mobject, "become", shadowing_become)

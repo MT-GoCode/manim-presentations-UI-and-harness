@@ -122,12 +122,10 @@ def check(beats: Sequence[BeatRecord], settings: Settings) -> list[Finding]:
     errs: list[Finding] = []
     frame_width, frame_height = settings.frame_width, settings.frame_height
     fx, fy = frame_width / 2, frame_height / 2
-    s = frame_width / settings.pixel_width / 2
+    s = frame_width / settings.pixel_width / 2  # under half a pixel of ink is not drawn: neither overlap nor off frame
     # the minimums as font sizes in this frame (they are stored as fractions of frame height, settings.py)
     min_text = settings.min_text * frame_height / SCALE_FACTOR_PER_FONT_POINT
-    min_tex = (
-        settings.min_tex * frame_height / SCALE_FACTOR_PER_FONT_POINT
-    )  # under half a pixel of ink is not drawn: neither overlap nor off frame
+    min_tex = settings.min_tex * frame_height / SCALE_FACTOR_PER_FONT_POINT
     for n, beat in enumerate(beats):
         units = beat.end
         inks = [_ink(u) for u in units]
@@ -177,8 +175,8 @@ def check(beats: Sequence[BeatRecord], settings: Settings) -> list[Finding]:
                 errs.append(
                     Finding(
                         "size-mismatch",
-                        f"{beat.slug} · {u.file}:{u.line} · {nu} was transformed between "
-                        "groups of unequal numbers of text objects; use ReplacementTransform(a, b)",
+                        f"{beat.slug} · {u.file}:{u.line} · {nu} was transformed between text and a "
+                        "shape (Manim pairs the two groups node by node); use ReplacementTransform(a, b)",
                     )
                 )
             if u.transient_beat == n:

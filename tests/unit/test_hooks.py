@@ -4,7 +4,6 @@ stops firing after a Manim upgrade."""
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +22,12 @@ SETTINGS = Settings(
     min_text=0.0,
     min_tex=0.0,
 )
+
+
+@pytest.fixture(autouse=True)
+def in_tmp_path(tmp_path, monkeypatch):
+    """Manim's default media, text and TeX folders are relative to the cwd (render_config restores them)."""
+    monkeypatch.chdir(tmp_path)
 
 
 def digests(build_scene) -> list[tuple[str, int]]:
@@ -215,7 +220,7 @@ def tee_run(build_scene, first: int) -> tuple[list[str], float, dict[int, str], 
     clip.render_config(SETTINGS)
     pass1 = [d for d, _ in digests(build_scene)]
     out: list[str] = []
-    with tempconfig({"from_animation_number": first, "media_dir": tempfile.mkdtemp()}):
+    with tempconfig({"from_animation_number": first}):
 
         class S(Scene):
             def construct(self):
@@ -275,7 +280,7 @@ def first_frame_vs_raster(build_scene) -> tuple[np.ndarray, np.ndarray]:
     """(the canonical raster at the first play's capture point, the pixels Manim actually drew for that frame)."""
     clip.render_config(SETTINGS)
     captured: dict[str, np.ndarray] = {}
-    with tempconfig({"media_dir": tempfile.mkdtemp()}):
+    with tempconfig({}):
 
         class S(Scene):
             def construct(self):
@@ -322,14 +327,21 @@ def test_the_end_raster_leaves_out_what_a_play_removed():
     assert np.array_equal(after, blank)
 
 
-@pytest.fixture
-def size_hooks(monkeypatch):
+def install_size_hooks(monkeypatch):
     """The pass-1 size hooks, restored after the test (they patch Manim classes)."""
-    from manim import Mobject, Paragraph, Transform
+    from manim import Mobject, Paragraph, Transform, TransformFromCopy
 
     for cls, name in ((Paragraph, "__init__"), (Transform, "clean_up_from_scene"), (Mobject, "become")):
         monkeypatch.setattr(cls, name, getattr(cls, name))
+    # TransformFromCopy inherits its clean-up: set then delete, so undo leaves it inheriting again.
+    monkeypatch.setattr(TransformFromCopy, "clean_up_from_scene", None)
+    monkeypatch.delattr(TransformFromCopy, "clean_up_from_scene")
     manim_hooks.install_size_references()
+
+
+@pytest.fixture
+def size_hooks(monkeypatch):
+    install_size_hooks(monkeypatch)
 
 
 def played(build_scene):
@@ -392,23 +404,128 @@ def test_text_transformed_into_a_non_text_slot_is_marked(size_hooks):
     def run(s):
         two = VGroup(Text("a", font_size=40), Text("b", font_size=40))
         s.add(two)
-        s.play(Transform(two, VGroup(Text("x", font_size=40), Square(0.3))))  # text where the target has none
+        s.play(Transform(two, VGroup(Text("x", font_size=36), Square(0.3))))  # text where the target has none
         return two
 
-    assert getattr(played(run), "_mpres_size_mismatch", False)
+    a, b = played(run)
+    assert not manim_hooks.mismatched(a) and manim_hooks.font_size(a) == pytest.approx(36)
+    assert manim_hooks.mismatched(b)
 
 
-def test_replacement_transform_leaves_no_shadow(size_hooks):
+def swapped():
+    from manim import Text, VGroup
+
+    return VGroup(Text("a", font_size=40), Square(0.5)), VGroup(Square(0.5), Text("tiny", font_size=8))
+
+
+def test_text_and_a_shape_that_swap_places_are_both_marked(size_hooks):
+    from manim import Transform
+
+    def run(s):
+        g, target = swapped()
+        s.add(g)
+        s.play(Transform(g, target))  # one Text on each side: equal counts, Manim pairs by family index
+        return g
+
+    text, square = played(run)
+    assert manim_hooks.mismatched(text) and manim_hooks.mismatched(square)
+
+
+@pytest.mark.parametrize("keywords", [{}, {"match_height": True}])
+def test_become_pairs_as_manim_does(size_hooks, keywords):
+    g, target = swapped()
+    g.become(target, **keywords)
+    text, square = g
+    assert manim_hooks.mismatched(text) and manim_hooks.mismatched(square)
+
+
+def test_become_with_a_keyword_leaves_its_argument_as_it_was(size_hooks):
+    """Manim aligns a private copy then, so the hook must not align the argument itself."""
+    g, target = swapped()
+    family = [id(x) for x in target.get_family()]
+    g.become(target, match_height=True)
+    assert [id(x) for x in target.get_family()] == family
+
+
+@pytest.mark.parametrize("keywords", [{}, {"match_height": True}, {"stretch": True}])
+def test_become_draws_the_same_with_the_hook(monkeypatch, keywords):
+    """The hook aligns the source after Manim's become: it must leave every node's type and points as Manim did."""
+
+    def became():
+        g, target = swapped()
+        g.become(target, **keywords)
+        return [(type(x), x.points) for x in g.get_family()]
+
+    without = became()
+    install_size_hooks(monkeypatch)
+    hooked = became()
+    assert [t for t, _ in hooked] == [t for t, _ in without]
+    assert all(np.array_equal(p, q) for (_, p), (_, q) in zip(hooked, without, strict=True))
+
+
+@pytest.mark.parametrize("keywords", [{}, {"match_height": False}])
+def test_become_copies_its_argument_only_when_manim_does(size_hooks, monkeypatch, keywords):
+    g, target = swapped()
+    monkeypatch.setattr(target, "copy", lambda *a, **k: pytest.fail("copied"))
+    g.become(target, **keywords)
+
+
+def test_transform_from_copy_keeps_the_shown_mobjects_own_size(size_hooks):
+    """TransformFromCopy ends drawing its target's own points, not its source's."""
+    from manim import Text, TransformFromCopy
+
+    def run(s):
+        a, b, sq, t = Text("a", font_size=40), Text("tiny", font_size=8), Square(), Text("big", font_size=60)
+        s.add(a, sq)
+        s.play(TransformFromCopy(a, b), TransformFromCopy(sq, t))
+        return b, t
+
+    b, t = played(run)
+    assert manim_hooks.font_size(b) == pytest.approx(8)
+    assert not manim_hooks.mismatched(t) and manim_hooks.font_size(t) == pytest.approx(60)
+
+
+def test_a_later_matching_transform_clears_a_mismatch(size_hooks):
+    from manim import Text, Transform, VGroup
+
+    def run(s):
+        g = VGroup(Text("a", font_size=40), Text("b", font_size=40))
+        s.add(g)
+        s.play(Transform(g, VGroup(Text("c", font_size=40), Square(0.3))))
+        s.play(Transform(g, VGroup(Text("d", font_size=36), Text("e", font_size=44))))
+        return g
+
+    g = played(run)
+    assert not any(manim_hooks.mismatched(x) for x in g.get_family())
+    assert [manim_hooks.font_size(x) for x in g] == [pytest.approx(36), pytest.approx(44)]
+
+
+def test_a_shape_transformed_into_text_is_marked(size_hooks):
+    from manim import Text, Transform
+
+    def run(s):
+        sq = Square(0.5)
+        s.add(sq)
+        s.play(Transform(sq, Text("tiny", font_size=8)))
+        return sq
+
+    assert manim_hooks.mismatched(played(run))
+
+
+def test_a_replaced_source_shown_again_is_sized_as_the_target_it_became(size_hooks):
+    """ReplacementTransform leaves its source holding the target's points; shown again, it draws the target's glyphs
+    at 48, which Manim's own reading (from the source's initial height) gets wrong."""
     from manim import ReplacementTransform, Text
 
     def run(s):
         a, b = Text("a", font_size=16), Text("b", font_size=48)
         s.add(a)
         s.play(ReplacementTransform(a, b))
-        return b
+        s.add(a)
+        return a, b
 
-    b = played(run)
-    assert not hasattr(b, "_mpres_ref") and manim_hooks.font_size(b) == pytest.approx(48)
+    a, b = played(run)
+    assert manim_hooks.font_size(a) == pytest.approx(48) and manim_hooks.font_size(b) == pytest.approx(48)
 
 
 def test_the_shadow_changes_no_frame(monkeypatch):
@@ -423,9 +540,5 @@ def test_the_shadow_changes_no_frame(monkeypatch):
         s.play(t.animate.shift([1, 0, 0]))
 
     without = digests(scene)
-    from manim import Mobject, Paragraph
-
-    for cls, name in ((Paragraph, "__init__"), (Transform, "clean_up_from_scene"), (Mobject, "become")):
-        monkeypatch.setattr(cls, name, getattr(cls, name))
-    manim_hooks.install_size_references()
+    install_size_hooks(monkeypatch)
     assert digests(scene) == without

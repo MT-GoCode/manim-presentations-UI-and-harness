@@ -31,9 +31,9 @@ from manim import (
 
 from manim_presentations import manim_hooks
 from manim_presentations.clip import RecordContext
-from manim_presentations.records import Animation, BeatKind, Box, LoopBeat, PlainBeat, Unit
+from manim_presentations.records import Animation, BeatKind, Box, EmptyLoop, LoopBeat, PlainBeat, Unit
 
-GLYPHS = (Text, MarkupText, SingleStringMathTex, DecimalNumber, Paragraph)  # every leaf under these is a glyph
+GLYPHS = (Text, MarkupText, SingleStringMathTex, DecimalNumber, Paragraph, Typst)  # every leaf under these is a glyph
 BACKGROUND = (NumberPlane, Axes)  # their lines never count for overlap
 SAMPLES_PER_CURVE = 8  # chords per cubic: a 45° arc in 8 chords strays 0.0012·r from the curve, under half a pixel
 #                        up to r = 3 (vendored from Explainers' lesson.py)
@@ -68,7 +68,7 @@ class _Beat:
         self.rasters: tuple[str, str] | None = None  # loops, in pass 1: (S_start, S_end) .npy file names
         self.end: tuple[Unit, ...] = ()
 
-    def record(self) -> PlainBeat | LoopBeat:
+    def record(self) -> PlainBeat | LoopBeat | EmptyLoop:
         common = {
             "slug": self.slug,
             "line": self.line,
@@ -76,12 +76,13 @@ class _Beat:
             "animations": tuple(self.animations),
             "end": self.end,
         }
-        match self.kind:
-            case "beat":
+        match self.kind, self.rasters:
+            case "beat", _:
                 return PlainBeat(**common)
-            case "loop":
-                assert self.rasters is not None, "pass 1 captures every loop's rasters"
-                return LoopBeat(**common, s_start=self.rasters[0], s_end=self.rasters[1])
+            case "loop", None:  # no play, so no first frame
+                return EmptyLoop(**common)
+            case "loop", (start, end):
+                return LoopBeat(**common, s_start=start, s_end=end)
 
 
 class Talk(Scene):
@@ -232,7 +233,7 @@ class Pass1Talk(Talk):
                     bleed=bleed,
                     text_size=_smallest(m, TEX, False),
                     tex_size=_smallest(m, TEX, True),
-                    size_mismatch=any(getattr(x, "_mpres_size_mismatch", False) for x in m.get_family()),
+                    size_mismatch=any(manim_hooks.mismatched(x) for x in m.get_family()),
                     glyphs=tuple(g),
                     markers=tuple(d),
                     strokes=tuple(s),
@@ -249,9 +250,12 @@ TEX = (SingleStringMathTex, DecimalNumber, Typst)  # TeX-set (or Typst-set) text
 
 
 def _smallest(m: Mobject, tex: type | tuple[type, ...], want_tex: bool) -> float | None:
-    """The smallest declared font size among m's size-checked nodes of one kind (Pango text or TeX), if any."""
+    """The smallest declared font size among m's size-checked nodes of one kind (Pango text or TeX), if any; a
+    mismatched node has none (size-mismatch reports it)."""
     sizes = [
-        manim_hooks.font_size(x) for x in m.get_family() if manim_hooks.sized(x) and isinstance(x, tex) == want_tex
+        manim_hooks.font_size(x)
+        for x in m.get_family()
+        if manim_hooks.sized(x) and not manim_hooks.mismatched(x) and isinstance(x, tex) == want_tex
     ]
     return min(sizes) if sizes else None
 

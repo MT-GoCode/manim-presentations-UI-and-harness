@@ -1,15 +1,18 @@
-"""The build's guards across processes and builds: pins, a killed render's leftovers, edits during a build, worker
-hygiene, the width seeds, one beat cut into chunks, and what scene processes may import from."""
+"""The build's guards across processes and builds: pins, a killed build's leftovers, a killed render, edits during a
+build, worker hygiene, the width seeds, one beat cut into chunks, and what scene processes may import from."""
 
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, TEST_WORKERS_WIDE
+import psutil
+from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, TEST_WORKERS_WIDE, render_peak
 
 from manim_presentations.deck import Deck, Layout
 
@@ -81,12 +84,44 @@ def test_a_presenter_that_has_not_pinned_yet_does_not_break_a_commit(talk):
         os.close(fd)
 
 
-def test_a_killed_renders_leftovers_are_wiped(talk):
+def test_a_killed_builds_leftovers_are_wiped(talk):
+    """A killed build's snapshot still holds a chapter since deleted: kept, it would join this build's snapshot and
+    fail pairing as an unnamed chapter."""
     root = talk("edge")
-    stale = root / "build" / ".media" / "chunk-0" / "media" / "videos"
-    stale.mkdir(parents=True)
-    (stale / "uncached_00000.mp4").write_bytes(b"a killed render's partial file")
     ok(build(root))
+    ghost = root / "build" / ".media" / "src" / "chapters" / "ghost.py"
+    ghost.parent.mkdir(parents=True)
+    ghost.write_text("def construct(talk):\n    talk.beat('boo')\n")
+    assert rendered(ok(build(root))) == []
+
+
+def test_a_killed_render_leaves_the_previous_build_whole(talk):
+    """SIGKILL to the parent while its render workers run: the index and every clip it names are as before, and the
+    next build renders exactly the edited beat."""
+    root = talk("edge")
+    ok(build(root))
+    before = (root / "build" / "index.json").read_bytes()
+    clips = {b["clip"]: clip_of(root, b["slug"]).read_bytes() for b in index(root)["beats"]}
+    edit(root / "chapters" / "text.py", 'Text("Edge"', 'Text("Edged"')
+    cmd = [sys.executable, "-P", "-m", "manim_presentations.cli", "build", str(root), "--workers", str(TEST_WORKERS)]
+    parent = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
+    assert parent.stdout is not None
+    for line in parent.stdout:  # the build's own phase line: render workers are spawned right after it
+        if line.startswith("render width"):
+            break
+    else:
+        raise AssertionError(f"the build ended before its render phase (exit {parent.wait()})")
+    proc = psutil.Process(parent.pid)
+    while not (workers := proc.children()):
+        assert parent.poll() is None, "the build ended before a render worker started"
+        time.sleep(0.01)
+    parent.send_signal(signal.SIGKILL)
+    parent.wait()
+    psutil.wait_procs(workers)  # they exit on their own once they see the dead parent; the lock is then free
+    assert (root / "build" / "index.json").read_bytes() == before
+    for sha, data in clips.items():
+        assert (root / "build" / "clips" / f"{sha}.mp4").read_bytes() == data
+    assert rendered(ok(build(root))) == ["words"]
 
 
 def test_an_edit_during_a_build_does_not_reach_its_clips(talk, tmp_path):
@@ -142,6 +177,18 @@ def test_a_render_config_change_outside_clip_py_fails_the_worker(talk, tmp_path)
     assert r.returncode == 1 and "render config changed outside clip.py" in r.stderr, r.stderr
 
 
+def test_a_join_that_loses_a_frame_fails_naming_the_beat(talk, tmp_path):
+    pkg = engine_copy(tmp_path)
+    edit(
+        pkg / "manim_presentations" / "clip.py",
+        "    for packet in src.demux(src.streams.video[0]):\n",
+        "    for packet in [p for p in src.demux(src.streams.video[0]) if p.dts is not None][:-1]:\n",
+    )  # every joined clip drops its last frame
+    r = build(talk("edge"), env={**os.environ, "PYTHONPATH": str(pkg)})
+    m = re.search(r"chapters/\S+\.py:\d+ beat \S+: joined (\d+) frames, pass 1 wrote (\d+)", r.stderr)
+    assert r.returncode == 1 and m and int(m[2]) - int(m[1]) == 1, r.stdout + r.stderr
+
+
 def test_pass1_width_comes_from_the_previous_builds_own_peaks(talk):
     root = talk("edge")
     ok(build(root))
@@ -164,13 +211,13 @@ def test_one_long_beat_spreads_across_workers_byte_identically(talk, tmp_path):
     shutil.copytree(one, wide)
     ok(build(one, 1, env=env))
     r = ok(build(wide, TEST_WORKERS_WIDE, env=env))
-    assert f"peak alive {TEST_WORKERS_WIDE}" in r.stdout
+    assert render_peak(r) == TEST_WORKERS_WIDE
     assert clip_of(one, "many").read_bytes() == clip_of(wide, "many").read_bytes()
     for root in (one, wide):  # and an edit to that one beat, alone
         edit(root / "chapters" / "long-beat.py", "rotate(0.2)", "rotate(0.25)")
     ok(build(one, 1, env=env))
     r = ok(build(wide, TEST_WORKERS_WIDE, env=env))
-    assert rendered(r) == ["many"] and f"peak alive {TEST_WORKERS_WIDE}" in r.stdout
+    assert rendered(r) == ["many"] and render_peak(r) == TEST_WORKERS_WIDE
     assert clip_of(one, "many").read_bytes() == clip_of(wide, "many").read_bytes()
 
 

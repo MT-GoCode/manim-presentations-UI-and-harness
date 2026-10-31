@@ -1,7 +1,7 @@
 """Facts the scene side records and the build side reads (pass 1's records.json). A leaf: imports nothing from the
 engine. Coordinates are scene units as the camera draws them."""
 
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -27,7 +27,7 @@ class Unit(_Frozen):
     bleed: bool  # meant to extend past the frame edge (talk.bleed)
     text_size: float | None  # the smallest declared font size of Pango text in it (Text, MarkupText, Paragraph)
     tex_size: float | None  # the smallest of TeX-set text in it (MathTex, Tex, DecimalNumber, Typst)
-    size_mismatch: bool  # a Transform or become between groups of unequal numbers of text objects
+    size_mismatch: bool  # a Transform or become paired a text node in it with a shape, or the reverse
     glyphs: tuple[Box, ...]  # letters and symbols
     markers: tuple[Box, ...]  # dots: placed on paths by intent, so they meet glyphs and dots only
     strokes: tuple[tuple[tuple[float, float], ...], ...]  # polylines, one per subpath
@@ -43,6 +43,7 @@ class Animation(_Frozen):
 
 
 class _Beat(_Frozen):
+    call: ClassVar[BeatKind]  # the talk call that started it, as the author wrote it
     slug: str
     line: int  # the talk.beat/talk.loop call's line in the chapter file
     first_anim: int  # the chapter scene's play index of this beat's first animation
@@ -51,6 +52,7 @@ class _Beat(_Frozen):
 
 
 class PlainBeat(_Beat):
+    call = "beat"
     kind: Literal["beat"] = "beat"
 
 
@@ -58,12 +60,21 @@ class LoopBeat(_Beat):
     """A loop also carries the two canonical state rasters its closure check compares: what its first frame shows,
     and the state after its last play (.npy files beside records.json)."""
 
+    call = "loop"
     kind: Literal["loop"] = "loop"
     s_start: str
     s_end: str
 
 
-BeatRecord = Annotated[PlainBeat | LoopBeat, Field(discriminator="kind")]
+class EmptyLoop(_Beat):
+    """A loop with no play: it has no first frame, so no rasters. The build's empty-beat check always fails it."""
+
+    call = "loop"
+    kind: Literal["empty-loop"] = "empty-loop"
+    animations: tuple[()] = ()
+
+
+BeatRecord = Annotated[PlainBeat | LoopBeat | EmptyLoop, Field(discriminator="kind")]
 
 
 class ChapterRecord(_Frozen):

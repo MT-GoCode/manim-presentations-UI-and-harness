@@ -40,6 +40,7 @@ def test_edge_and_hello_build_clean(talk):
         ("mismatch", r'error: script\.md:\d+ has "## named-as" but chapters/mismatch\.py has no talk\.beat/loop'),
         ("early-play", r"error: chapters/early-play\.py:5: play or wait before the chapter's first talk\.beat"),
         ("empty-beat", r'error: chapters/empty-beat\.py:5 beat "only-adds" has no animation'),
+        ("empty-loop", r'error: chapters/empty-loop\.py:5 loop "idle" has no animation; give it one'),
         ("unnamed", r"error: chapters/stray\.py is not named by any `# stray` in script\.md"),
         ("reads-outside", r"error: chapters/reads-outside\.py read /private/tmp/x, outside the talk folder"),
         # the talk's fourth chapter: a beat's index for transient marks is its index in its own chapter
@@ -49,6 +50,7 @@ def test_edge_and_hello_build_clean(talk):
         ),
         ("repeat-beat", r'error: chapters/repeat-beat\.py:7: beat "again" was already started in this chapter'),
         ("read-tempdir", r"error: chapters/read-tempdir\.py read /private/var/folders/\S+/mpres-scratch, outside"),
+        ("read-tempdir", r"error: chapters/read-tempdir\.py read /private/var/folders/\S+/T, outside"),
         ("read-engine", r"error: chapters/read-engine\.py read \S+/pyproject\.toml, outside the talk folder"),
         (
             "swapped",
@@ -85,6 +87,17 @@ def test_edge_and_hello_build_clean(talk):
             r"error: grid · chapters/small-table\.py:6 · Table at \(.+\) font size 14\.4 is below the minimum 32\.0",
         ),
         (
+            "size-mismatch",
+            r"error: morph · chapters/size-mismatch\.py:6 · Text at \(.+\) was transformed between text and a "
+            r"shape \(Manim pairs the two groups node by node\); use ReplacementTransform\(a, b\)",
+        ),
+        (
+            "shape-to-text",
+            r"error: sprouts · chapters/shape-to-text\.py:6 · Square at \(.+\) was transformed between text and",
+        ),
+        # one Text on each side, in swapped places: its 8-pt glyphs land in the Square
+        ("swap", r"error: trade · chapters/swap\.py:6 · Square at \(.+\) was transformed between text and"),
+        (
             "unclosed",
             r'error: chapters/unclosed\.py:5 loop "drifts" does not close: its end state differs from its first frame in \d+ pixels',
         ),
@@ -97,9 +110,25 @@ def test_each_authoring_error_is_named_at_its_line(talk, overlay, expected):
     assert "Traceback" not in r.stderr
 
 
-def test_failure_counts_per_kind(talk):
-    r = build(talk("edge", "overlap"))
-    assert r.stderr.splitlines()[-1] == "checks failed: overlap 1"
+@pytest.mark.parametrize(
+    "overlay,counts",
+    [("overlap", "overlap 1"), ("swap", "size-mismatch 2"), ("empty-loop", "empty-beat 1")],
+)
+def test_failure_counts_per_kind(talk, overlay, counts):
+    r = build(talk("edge", overlay))
+    assert r.stderr.splitlines()[-1] == f"checks failed: {counts}"
+
+
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        "remorph",  # a later matching Transform clears a size mismatch
+        "fromcopy",  # TransformFromCopy of an equation part into a new equation
+    ],
+)
+def test_legal_transforms_pass_the_size_check(talk, overlay):
+    r = build(talk("edge", overlay))
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_a_bad_slug_in_script_md_is_one_line_not_a_traceback(talk):
@@ -158,7 +187,10 @@ def test_the_build_lock_outlives_a_killed_parent_until_its_children_exit(talk):
     for line in parent.stdout:  # the build's own phase line: pass 1 is spawned right after it
         if line.startswith("pass-1 width"):
             break
-    time.sleep(1)  # the children are alive by now
+    deadline = time.monotonic() + WATCH_BOUND
+    while not psutil.Process(parent.pid).children():  # a child alive holds the inherited lock
+        assert time.monotonic() < deadline, "no pass-1 child started"
+        time.sleep(0.01)
     parent.send_signal(signal.SIGKILL)
     parent.wait()
     fd = os.open(root / "build" / ".build.lock", os.O_RDWR)

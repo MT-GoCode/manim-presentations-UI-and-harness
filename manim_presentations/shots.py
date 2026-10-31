@@ -46,7 +46,9 @@ def shots(root: Path, out: Path | None, workers: int | None) -> int:
         digits = len(str(len(deck.beats)))
         named = [(f"{n:0{digits}d}-{b.slug}", b) for n, b in enumerate(deck.beats, 1)]
         megapixels = deck.render.pixel_width * deck.render.pixel_height / 1e6
-        width = headroom.choose("shots", workers, len(named), stills.DECODE_CORES, stills.decode_ram(megapixels), print)
+        width, _ = headroom.choose(
+            "shots", workers, len(named), stills.DECODE_CORES, stills.decode_ram(megapixels), print
+        )
 
         def frames(job: tuple[str, BuiltBeat]) -> None:
             name, b = job

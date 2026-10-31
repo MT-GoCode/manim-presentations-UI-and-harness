@@ -56,13 +56,15 @@ class TooBig(Exception):
     """One job alone needs more than 75% of the free RAM; only an explicit --workers runs it anyway."""
 
 
-def choose(phase: str, workers: int | None, jobs: int, cores: float, ram: int, say: Callable[[str], None]) -> int:
+def choose(
+    phase: str, workers: int | None, jobs: int, cores: float, ram: int, say: Callable[[str], None]
+) -> tuple[int, str]:
     """`--workers N` exactly, or 75% of free headroom for jobs of the given measured size, printed with its inputs (a
-    human line and one exact machine line for tests to parse)."""
+    human line and one exact machine line for tests to parse). Returns (width, what it was chosen from)."""
     estimate = f"{ram / 2**30:.2f} GB per job est"
     if workers is not None:
         say(f"{phase} width: {workers} (--workers) · {estimate}")
-        return workers
+        return workers, "--workers"
     if jobs == 1:
         tagged, label = ram_only(psutil.virtual_memory().available, ram), "1 job"
     else:
@@ -76,7 +78,7 @@ def choose(phase: str, workers: int | None, jobs: int, cores: float, ram: int, s
     match tagged:
         case Width(n):
             say(f"{phase} width: {n} ({label}) · {estimate}")
-            return n
+            return n, label
         case RamExceeded(per_job, available):
             raise TooBig(
                 f"one {phase} job needs {per_job / 2**30:.1f} GB, more than 75% of the "
