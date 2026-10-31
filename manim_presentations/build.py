@@ -38,7 +38,7 @@ from manim_presentations.deck import (
 )
 from manim_presentations.geometry import Finding
 from manim_presentations.records import CHAPTER_RECORD, BeatRecord, ChapterRecord, EmptyLoop, LoopBeat, PlainBeat
-from manim_presentations.script import Script
+from manim_presentations.script import Chapter, Script
 from manim_presentations.script import load as load_script
 from manim_presentations.settings import Settings, SettingsError
 from manim_presentations.settings import load as load_settings
@@ -173,11 +173,11 @@ def run_all(
     return done, peak
 
 
-def pass1_jobs(layout: Layout, script: Script, settings: Settings, shared: Path) -> list[Job]:
+def pass1_jobs(layout: Layout, chapters: list[Chapter], settings: Settings, shared: Path) -> list[Job]:
     """One pass-1 job per chapter, each with a private copy of the warm cache: Manim writes into its cache even on a
     hit (a fixed-name temp SVG) and checks-then-writes on a miss, so chapters sharing a text would race."""
     jobs: list[Job] = []
-    for c in script.chapters:
+    for c in chapters:
         name = f"pass1-{c.slug}"
         args = [
             str(layout.snapshot),
@@ -191,6 +191,29 @@ def pass1_jobs(layout: Layout, script: Script, settings: Settings, shared: Path)
         jobs.append(Job(name, "pass1", args))
     seed_caches(shared, [layout.process(j.name) / "cache" for j in jobs])
     return jobs
+
+
+def engine_code() -> str:
+    """Every engine module: pass 1's output depends on how the engine records a chapter, so any engine edit re-runs
+    every chapter's pass 1 (rendering still reuses every beat whose frames are unchanged)."""
+    h = hashlib.sha256()
+    for p in sorted(Path(__file__).parent.glob("*.py")):
+        h.update(p.name.encode() + b"\0" + p.read_bytes())
+    return h.hexdigest()
+
+
+def pass1_key(base: list[str], snapshot: Path, inputs: tuple[str, ...]) -> str:
+    """What a chapter's pass 1 depends on: `base` (engine, cache-id, settings, titles) and the current digest of
+    each talk file it opened and each folder it listed ("dir/": its sorted entry names); "absent" once gone."""
+    h = hashlib.sha256(json.dumps(base).encode())
+    for rel in inputs:
+        p = snapshot / rel.rstrip("/")
+        if rel.endswith("/"):
+            digest = json.dumps(sorted(os.listdir(p))) if p.is_dir() else "absent"
+        else:
+            digest = sha256(p) if p.is_file() else "absent"
+        h.update(f"{rel}\0{digest}\0".encode())
+    return h.hexdigest()
 
 
 def pairing(script: Script, records: list[ChapterRecord]) -> list[Finding]:
@@ -256,8 +279,8 @@ def merge_caches(layout: Layout, shared: Path, chapters: list[str]) -> int:
 
 
 def prune_cache(shared: Path, records: list[ChapterRecord]) -> int:
-    """After commit: keep only the entries some chapter's pass 1 opened or created. Pass 1 runs every chapter in full,
-    so the cache never grows past what the talk uses."""
+    """After commit: keep only the entries some chapter's pass 1 opened or created (a reused chapter's record keeps
+    the entries it opened when it last ran), so the cache never grows past what the talk uses."""
     used = {e for r in records for e in r.cache_entries}
     n = 0
     for dirpath, _, filenames in os.walk(shared):
@@ -350,12 +373,14 @@ def build(talk: Path, workers: int | None) -> int:
     if missing or extra:
         fail_checks([*missing, *extra])
     pass1_cores, pass1_ram = PASS1_CORES, PASS1_RAM
+    old_costs: dict[str, ChapterCost] = {}
     old_beats: dict[str, IndexBeat] = {}
     old_files: set[str] = set()  # the previous index's files: kept one more build
     match layout.previous():
         case PreviousBuild(index=old):
             pass1_cores = max(c.pass1_cores for c in old.chapters.values())
             pass1_ram = max(c.pass1_rss for c in old.chapters.values())
+            old_costs = dict(old.chapters)
             old_beats = {b.fingerprint: b for b in old.beats}
             old_files = layout.files_of(old)
         case NoPrevious(reason=reason):
@@ -372,17 +397,39 @@ def build(talk: Path, workers: int | None) -> int:
     shared.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "PYTHONHASHSEED": "0"}
     tex_env = {**env, "PATH": (tinytex() / "bin-path").read_text().strip() + os.pathsep + os.environ["PATH"]}
-    jobs = pass1_jobs(layout, script, settings, shared)
-    width, _ = width_for("pass-1", workers, len(jobs), pass1_cores, pass1_ram)
-    pass1_done, peak = run_all(jobs, width, tex_env, layout, "pass 1")
-    records = [
-        CHAPTER_RECORD.validate_json((layout.process(f"pass1-{c}") / "records.json").read_bytes()) for c in chapters
-    ]
-    merged = merge_caches(layout, shared, chapters)
+    engine = engine_code()
+
+    def base(c: Chapter) -> list[str]:
+        return [engine, cid, settings.to_argv(), c.slug, c.title or c.slug, script.title]
+
+    def reusable(c: Chapter) -> ChapterRecord | None:
+        """The stored record, if the previous build committed it and nothing it read has changed since."""
+        store = layout.pass1_store(c.slug)
+        if c.slug not in old_costs or not (store / "key").exists():
+            return None
+        record = CHAPTER_RECORD.validate_json((store / "records.json").read_bytes())
+        return record if (store / "key").read_text() == pass1_key(base(c), layout.snapshot, record.inputs) else None
+
+    stored = {c.slug: r for c in script.chapters if (r := reusable(c)) is not None}
+    fresh = [c for c in script.chapters if c.slug not in stored]
+    jobs = pass1_jobs(layout, fresh, settings, shared)
+    pass1_done: dict[str, Done] = {}
+    width = peak = 0
+    if jobs:
+        width, _ = width_for("pass-1", workers, len(jobs), pass1_cores, pass1_ram)
+        pass1_done, peak = run_all(jobs, width, tex_env, layout, "pass 1")
+    outs = {c: layout.pass1_store(c) if c in stored else layout.process(f"pass1-{c}") for c in chapters}
+    records = [stored.get(c) or CHAPTER_RECORD.validate_json((outs[c] / "records.json").read_bytes()) for c in chapters]
+    costs = {
+        c: old_costs[c]
+        if c in stored
+        else ChapterCost(pass1_rss=pass1_done[f"pass1-{c}"].rss, pass1_cores=pass1_done[f"pass1-{c}"].cores)
+        for c in chapters
+    }
+    merged = merge_caches(layout, shared, [c.slug for c in fresh])
     say(
-        f"pass 1: {len(jobs)} chapters · width {width} · peak alive {peak} · max RSS "
-        f"{max(d.rss for d in pass1_done.values()) / 2**30:.2f} GB · {merged} new cache entries · "
-        f"{time.monotonic() - t1:.2f}s"
+        f"pass 1: {len(jobs)} of {len(chapters)} chapters run, {len(stored)} reused · width {width} · peak alive "
+        f"{peak} · {merged} new cache entries · {time.monotonic() - t1:.2f}s"
     )
     findings = pairing(script, records)
     for r in records:  # one chapter at a time: a beat's index (transient marks) is its index in its own chapter
@@ -395,7 +442,7 @@ def build(talk: Path, workers: int | None) -> int:
             if not b.animations
         ]
         findings += geometry.check(r.beats, settings)
-        findings += loop_closure(layout.process(f"pass1-{r.chapter}"), r)
+        findings += loop_closure(outs[r.chapter], r)
     if findings:
         fail_checks(findings)
 
@@ -415,7 +462,7 @@ def build(talk: Path, workers: int | None) -> int:
     to_render = {c: plays for c, plays in to_render.items() if plays}
     megapixels = settings.pixel_width * settings.pixel_height / 1e6
     reports, render_width = render(
-        layout, script, settings, records, to_render, megapixels, workers, pass1_done, shared, env
+        layout, script, settings, records, to_render, megapixels, workers, costs, shared, env
     )
 
     # Join, stream check and stills, per beat, in parallel.
@@ -492,10 +539,7 @@ def build(talk: Path, workers: int | None) -> int:
         schema=SCHEMA,
         build_id=new_build_id(),
         files={str(p): sha256(layout.snapshot / p) for p in files},
-        chapters={
-            c: ChapterCost(pass1_rss=pass1_done[f"pass1-{c}"].rss, pass1_cores=pass1_done[f"pass1-{c}"].cores)
-            for c in chapters
-        },
+        chapters=costs,
         render=Render(pixel_width=settings.pixel_width, pixel_height=settings.pixel_height, fps=settings.frame_rate),
         structure=script.structure,
         beats=tuple(built),
@@ -503,6 +547,12 @@ def build(talk: Path, workers: int | None) -> int:
     with layout.clips_exclusive(lambda: say("commit: waiting for shots/export to finish")):
         layout.write_index(index)
         collected = layout.gc(layout.files_of(index) | old_files, layout.live_pins(), cid)
+        store_pass1(
+            layout,
+            fresh,
+            chapters,
+            {c.slug: pass1_key(base(c), layout.snapshot, records[chapters.index(c.slug)].inputs) for c in fresh},
+        )
     pruned = prune_cache(shared, records)
     shutil.rmtree(layout.media, ignore_errors=True)
     os.close(lock)  # last: the next build may wipe .media only once this one is done with it
@@ -514,6 +564,26 @@ def build(talk: Path, workers: int | None) -> int:
     return 0
 
 
+def store_pass1(layout: Layout, fresh: list[Chapter], chapters: list[str], keys: dict[str, str]) -> None:
+    """After the index commits: each freshly run chapter's pass-1 output becomes its store (replaced whole), and stores
+    of chapters no longer in the talk go."""
+    root = layout.build / "pass1"
+    for c in fresh:
+        out, store, tmp = layout.process(f"pass1-{c.slug}"), layout.pass1_store(c.slug), root / f".tmp-{c.slug}"
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir(parents=True)
+        for f in [out / "records.json", *out.glob("*.npy")]:
+            copy_file(f, tmp / f.name)
+        (tmp / "key").write_text(keys[c.slug])
+        if store.exists():
+            shutil.rmtree(store)
+        os.replace(tmp, store)
+    for old in root.iterdir():
+        if old.name not in chapters:
+            shutil.rmtree(old)
+
+
 def render(
     layout: Layout,
     script: Script,
@@ -522,7 +592,7 @@ def render(
     to_render: dict[str, dict[int, float]],
     megapixels: float,
     workers: int | None,
-    pass1_done: dict[str, Done],
+    costs: dict[str, ChapterCost],
     shared: Path,
     env: dict[str, str],
 ) -> tuple[dict[tuple[str, int], str], int | None]:
@@ -538,7 +608,7 @@ def render(
         return {}, None
     chunks = schedule.chunks(to_render, megapixels)
     titles = {c.slug: c.title or c.slug for c in script.chapters}
-    worker_ram = max(pass1_done[f"pass1-{c}"].rss for c in to_render) + worker_overhead(megapixels)
+    worker_ram = max(costs[c].pass1_rss for c in to_render) + worker_overhead(megapixels)
     width, chosen = width_for("render", workers, len(chunks), WORKER_CORES, worker_ram)
     jobs = []
     for k, ch in enumerate(chunks):

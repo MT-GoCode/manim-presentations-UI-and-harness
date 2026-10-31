@@ -258,6 +258,11 @@ class Layout:
         os.set_inheritable(fd, True)
         return fd
 
+    def pass1_store(self, chapter: str) -> Path:
+        """A chapter's last committed pass-1 output (records.json, loop rasters, the key it was made under); a build
+        reuses it while nothing the chapter read has changed. Outside .media, which builds wipe."""
+        return self.build / "pass1" / chapter
+
     @property
     def audience_log(self) -> Path:
         """The Audience process's stdout and stderr, truncated at each launch; outside .media, which builds wipe."""

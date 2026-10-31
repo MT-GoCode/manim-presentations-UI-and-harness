@@ -79,12 +79,13 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         item.add_marker(getattr(pytest.mark, level))
 
 
-def mpres(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def mpres(*args: str, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """The engine of the clone under test (this venv's interpreter), never `mpres` from PATH, which points at
-    whichever clone setup last linked."""
+    whichever clone setup last linked. `env` adds to the environment (an engine copy's PYTHONPATH, for example)."""
     return subprocess.run(
         [sys.executable, "-P", "-m", "manim_presentations.cli", *args],
         cwd=cwd,
+        env={**os.environ, **(env or {})},
         capture_output=True,
         text=True,
         timeout=SUBPROCESS_TIMEOUT,

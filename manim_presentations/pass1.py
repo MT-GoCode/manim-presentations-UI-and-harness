@@ -30,13 +30,15 @@ def cannot_read(flags: int) -> bool:
 class ReadGuard:
     """An audit hook, live only while `active`. It fails any read outside an exact allow-list of roots (raising in the
     audited call, and listing the violation, so a try/except in talk code cannot swallow it), and records which
-    private TeX/text cache entries were opened or created (observation only). Roots are compared after realpath:
+    private TeX/text cache entries were opened or created and which talk files and folders were read (observation
+    only: they key the chapter's reuse by the next build). Roots are compared after realpath:
     /tmp and /var are symlinks into /private."""
 
     def __init__(self, snapshot: Path, cache: Path, tinytex: Path):
         import manim_presentations
 
         self.cache = realpath(cache)
+        self.snapshot = realpath(snapshot)
         package = Path(manim_presentations.__file__).parent
         self.roots = tuple(
             realpath(p) for p in (snapshot, sys.prefix, sys.base_prefix, package, tinytex, cache, *SYSTEM_ROOTS)
@@ -47,6 +49,7 @@ class ReadGuard:
         self.active = False
         self.violations: list[str] = []
         self.cache_entries: set[str] = set()
+        self.inputs: set[str] = set()  # snapshot-relative: files opened, and folders listed (as "dir/")
 
     def __call__(self, event: str, args: tuple[Any, ...]) -> None:
         if not self.active or event not in READ_EVENTS:
@@ -55,6 +58,9 @@ class ReadGuard:
         if not isinstance(path, (str, bytes, os.PathLike)):  # a file descriptor or None: already opened, or cwd
             return
         p = realpath(os.fsdecode(path))
+        if p == self.snapshot or p.startswith(self.snapshot + os.sep):
+            rel = os.path.relpath(p, self.snapshot)
+            self.inputs.add(rel if event == "open" else rel.rstrip("/") + "/")
         if event == "open":
             if p.startswith(self.cache + os.sep):
                 self.cache_entries.add(os.path.basename(p))
@@ -125,6 +131,7 @@ def main(argv: list[str]) -> int:
         file=str(where),
         beats=tuple(b.record() for b in scene.beats),
         cache_entries=tuple(sorted(guard.cache_entries)),
+        inputs=tuple(sorted(guard.inputs)),
     )
     (out_path / "records.json").write_bytes(CHAPTER_RECORD.dump_json(record))
     return 0

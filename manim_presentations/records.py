@@ -82,6 +82,7 @@ class ChapterRecord(_Frozen):
     file: str
     beats: tuple[BeatRecord, ...]
     cache_entries: tuple[str, ...]  # basenames of the TeX/text cache entries this chapter opened or created
+    inputs: tuple[str, ...]  # snapshot-relative talk files it opened, and folders it listed ("dir/"): its reuse key
 
 
 CHAPTER_RECORD: TypeAdapter[ChapterRecord] = TypeAdapter(ChapterRecord)
