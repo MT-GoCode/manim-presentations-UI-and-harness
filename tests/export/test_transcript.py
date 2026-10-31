@@ -30,6 +30,7 @@ def test_the_current_beat_is_highlighted_and_scrolled_into_view(open_player):
     p = open_player("full", (960, 300))  # short, so the panel must scroll to show the last beat
     assert p.page.evaluate("(e => e.scrollHeight > e.clientHeight)(document.getElementById('transcript'))")
     assert current(p) == "Beat A"  # Before shows beat 0
+    assert p.page.evaluate("[...document.querySelectorAll('#transcript p.note')].map(e => e.textContent)") == NOTES
     titles = ["Beat A", "Beat B </script> ends no script", "Beat C loops", "d"]
     for i, title in enumerate(titles):
         p.transition(lambda: p.page.keyboard.press("ArrowDown"), max(i - 1, 0), i, 0)

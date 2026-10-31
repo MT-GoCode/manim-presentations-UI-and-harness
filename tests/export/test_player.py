@@ -45,6 +45,16 @@ def test_every_transition_shows_the_right_frame_and_nothing_else_on_the_way(play
     assert player.front() == (0, 0) and player.videos() == 1
 
 
+def test_the_jump_list_shows_titles_by_chapter(player):
+    groups = player.page.evaluate(
+        "[...document.querySelectorAll('#jump optgroup')].map(g => [g.label, [...g.children].map(o => o.text)])"
+    )
+    assert groups == [
+        ["First chapter", ["Beat A", "Beat B </script> ends no script"]],
+        ["Second chapter", ["Beat C loops", "d"]],
+    ]
+
+
 def test_a_boundary_flashes_and_changes_nothing(player):
     player.page.keyboard.press("ArrowUp")  # Previous at Before
     assert player.page.evaluate("document.body.classList.contains('boundary')")
@@ -117,7 +127,7 @@ def test_a_clip_that_fails_to_load_says_so_and_the_last_frame_stays(open_player,
     p.page.keyboard.press("ArrowDown")
     p.page.wait_for_function("() => document.body.classList.contains('failed')")
     assert p.page.text_content("#status") == "Beat B </script> ends no script: the clip failed to load"
-    assert p.front()[0] == 0  # beat a stays on screen
+    assert p.front()[0] == 0 and p.videos() == 1  # beat a stays on screen; the failed element is gone
     assert len(p.errors) == 1 and "clip 1 failed to load" in p.errors[0], p.errors
     p.errors.clear()
 

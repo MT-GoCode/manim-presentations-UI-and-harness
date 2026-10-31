@@ -2,10 +2,9 @@
 The code is beat number << 8 | a counter that each play moves linearly by one per frame (a loop's counter wraps at
 its period, so the loop closes)."""
 
-from manim import UP, WHITE, Rectangle, ValueTracker, VGroup, linear
+from manim import UP, WHITE, Rectangle, ValueTracker, VGroup, config, linear
 
 BITS = 12
-FPS = 25  # talk.toml's frame rate
 
 
 class FrameCode:
@@ -23,7 +22,7 @@ class FrameCode:
         self.paint()
 
     def play(self, animation, run_time):
-        end = self.counter.get_value() + run_time * FPS
+        end = self.counter.get_value() + run_time * config.frame_rate  # talk.toml's, as the build set it
         self.talk.play(animation, self.counter.animate(rate_func=linear).set_value(end), run_time=run_time)
 
     def paint(self):

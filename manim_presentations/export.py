@@ -77,7 +77,10 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
     layout = Layout(root)
     layout.export_tmp.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(dir=layout.export_tmp))
-    partial = out.with_name(f".{out.name}.tmp")  # beside --out: os.replace needs one filesystem
+    # Beside --out (os.replace needs one filesystem), and this run's own: two exports to one --out never share it.
+    fd, name = tempfile.mkstemp(dir=out.parent, prefix=f".{out.name}.", suffix=".tmp")
+    os.close(fd)  # the name is reserved; the page is written to it later
+    partial = Path(name)
     try:
         with layout.clips_shared():  # no commit can collect the clips between opening the deck and reading them
             deck = Deck.open(root)
@@ -93,10 +96,13 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
             ram = encode_ram(r.pixel_width * r.pixel_height / 1e6, w * h / 1e6)
             n = headroom.choose("export", workers, len(deck.beats), ENCODE_CORES, ram, say)
             clips = [tmp / f"{i}.mp4" for i in range(len(deck.beats))]
-            with ProcessPoolExecutor(n, mp_context=multiprocessing.get_context("spawn")) as pool:  # no forked locks
+            pool = ProcessPoolExecutor(n, mp_context=multiprocessing.get_context("spawn"))  # spawn: no forked locks
+            try:
                 job = functools.partial(encode, width=w, height=h, crf=crf, fps=r.fps)
                 for k, _ in enumerate(pool.map(job, [b.clip for b in deck.beats], clips), 1):
                     say(f"encoded {k}/{len(clips)}")
+            finally:
+                pool.shutdown(cancel_futures=True)  # a failed encode does not wait for the queued ones
         manifest = {
             "title": talk.title,
             "fps": r.fps,

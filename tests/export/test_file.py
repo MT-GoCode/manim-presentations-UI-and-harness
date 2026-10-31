@@ -34,7 +34,8 @@ def refused(r: subprocess.CompletedProcess[str], message: str) -> None:
 
 
 def test_every_frame_of_every_beat_is_the_builds_frame_at_the_asked_size(frames_talk, tmp_path):
-    for flags, (w, h) in (((), (480, 270)), (("--height", "180"), (320, 180))):
+    # 184: 2·round(163.6) = 328, where a plain round would give an odd 327
+    for flags, (w, h) in (((), (480, 270)), (("--height", "180"), (320, 180)), (("--height", "184"), (328, 184))):
         out = tmp_path / f"{h}.html"
         r = export(frames_talk, out, *flags, "--workers", str(TEST_WORKERS))
         assert r.returncode == 0, r.stderr
@@ -71,6 +72,12 @@ def test_odd_height_and_crf_outside_0_51_are_refused_at_the_command_line(frames_
         r = export(frames_talk, tmp_path / "x.html", *flags)
         assert r.returncode == 2 and message in r.stderr, flags
     assert export(frames_talk, tmp_path / "y.html", "--crf", "51", "--height", "2").returncode == 0
+
+
+def test_the_default_height_is_h0_when_the_source_is_taller(frames_talk, tmp_path):
+    env = engine_copy(tmp_path, "H0 = 1080", "H0 = 180")
+    r = run("export", str(frames_talk), "--out", str(tmp_path / "x.html"), "--workers", "1", env=env)
+    assert r.returncode == 0 and "export: height 180 · width 320 · crf 28" in r.stdout, r.stdout + r.stderr
 
 
 def test_a_higher_crf_makes_smaller_clips(frames_talk, tmp_path):

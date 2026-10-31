@@ -98,6 +98,7 @@ function show({beat, frame, play}) {
     if (mine !== shows) return release(v);
     document.body.classList.add("failed");
     notice.textContent = `${M.beats[beat].title}: the clip failed to load`;
+    v.remove();  // the front video, and its frame, stay
     throw new Error(`clip ${beat} failed to load`);
   });
   v.src = blobUrl(beat);
