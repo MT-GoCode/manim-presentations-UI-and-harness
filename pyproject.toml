@@ -31,7 +31,7 @@ packages = ["manim_presentations"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = ["tests/fixtures"]  # talks written the way users write them, including deliberate mistakes
+extend-exclude = ["tests/fixtures", "AGENT-ARTIFACTS"]  # fixtures: talks as users write them, mistakes included; artifacts: the journey record
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]

@@ -1,0 +1,458 @@
+[
+ {
+  "clip": 0,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/02/media/videos/2168p30/Context.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip000.mp4"
+ },
+ {
+  "clip": 1,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip001.mp4"
+ },
+ {
+  "clip": 2,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip002.mp4"
+ },
+ {
+  "clip": 3,
+  "length": 74,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 246,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip003.mp4"
+ },
+ {
+  "clip": 4,
+  "length": 148,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip004.mp4"
+ },
+ {
+  "clip": 5,
+  "length": 60,
+  "loop": true,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 148,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip005.mp4"
+ },
+ {
+  "clip": 6,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 179,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip006.mp4"
+ },
+ {
+  "clip": 7,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 218,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip007.mp4"
+ },
+ {
+  "clip": 8,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/06/media/videos/2168p30/ZephonSingle.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip008.mp4"
+ },
+ {
+  "clip": 9,
+  "length": 74,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/06/media/videos/2168p30/ZephonSingle.mp4",
+  "start": 39,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip009.mp4"
+ },
+ {
+  "clip": 10,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/07/media/videos/2168p30/OldSwarm.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip010.mp4"
+ },
+ {
+  "clip": 11,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip011.mp4"
+ },
+ {
+  "clip": 12,
+  "length": 985,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/09/media/videos/2168p30/Outcomes.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip012.mp4"
+ },
+ {
+  "clip": 13,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/01/media/videos/2168p30/Title.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip013.mp4"
+ },
+ {
+  "clip": 14,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip014.mp4"
+ },
+ {
+  "clip": 15,
+  "length": 985,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip015.mp4"
+ },
+ {
+  "clip": 16,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/06/media/videos/2168p30/ZephonSingle.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip016.mp4"
+ },
+ {
+  "clip": 17,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/07/media/videos/2168p30/OldSwarm.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip017.mp4"
+ },
+ {
+  "clip": 18,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip018.mp4"
+ },
+ {
+  "clip": 19,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 246,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip019.mp4"
+ },
+ {
+  "clip": 20,
+  "length": 985,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/09/media/videos/2168p30/Outcomes.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip020.mp4"
+ },
+ {
+  "clip": 21,
+  "length": 74,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/01/media/videos/2168p30/Title.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip021.mp4"
+ },
+ {
+  "clip": 22,
+  "length": 90,
+  "loop": true,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/02/media/videos/2168p30/Context.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip022.mp4"
+ },
+ {
+  "clip": 23,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip023.mp4"
+ },
+ {
+  "clip": 24,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip024.mp4"
+ },
+ {
+  "clip": 25,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 394,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip025.mp4"
+ },
+ {
+  "clip": 26,
+  "length": 148,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip026.mp4"
+ },
+ {
+  "clip": 27,
+  "length": 985,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/06/media/videos/2168p30/ZephonSingle.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip027.mp4"
+ },
+ {
+  "clip": 28,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/07/media/videos/2168p30/OldSwarm.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip028.mp4"
+ },
+ {
+  "clip": 29,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/07/media/videos/2168p30/OldSwarm.mp4",
+  "start": 246,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip029.mp4"
+ },
+ {
+  "clip": 30,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip030.mp4"
+ },
+ {
+  "clip": 31,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 591,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip031.mp4"
+ },
+ {
+  "clip": 32,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/09/media/videos/2168p30/Outcomes.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip032.mp4"
+ },
+ {
+  "clip": 33,
+  "length": 74,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/01/media/videos/2168p30/Title.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip033.mp4"
+ },
+ {
+  "clip": 34,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/01/media/videos/2168p30/Title.mp4",
+  "start": 74,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip034.mp4"
+ },
+ {
+  "clip": 35,
+  "length": 985,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/02/media/videos/2168p30/Context.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip035.mp4"
+ },
+ {
+  "clip": 36,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip036.mp4"
+ },
+ {
+  "clip": 37,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 39,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip037.mp4"
+ },
+ {
+  "clip": 38,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 285,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip038.mp4"
+ },
+ {
+  "clip": 39,
+  "length": 148,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 324,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip039.mp4"
+ },
+ {
+  "clip": 40,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip040.mp4"
+ },
+ {
+  "clip": 41,
+  "length": 120,
+  "loop": true,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 246,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip041.mp4"
+ },
+ {
+  "clip": 42,
+  "length": 148,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/04/media/videos/2168p30/Evaluation.mp4",
+  "start": 307,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip042.mp4"
+ },
+ {
+  "clip": 43,
+  "length": 148,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip043.mp4"
+ },
+ {
+  "clip": 44,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 148,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip044.mp4"
+ },
+ {
+  "clip": 45,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 187,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip045.mp4"
+ },
+ {
+  "clip": 46,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/05/media/videos/2168p30/Kernels.mp4",
+  "start": 226,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip046.mp4"
+ },
+ {
+  "clip": 47,
+  "length": 39,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/06/media/videos/2168p30/ZephonSingle.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip047.mp4"
+ },
+ {
+  "clip": 48,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/06/media/videos/2168p30/ZephonSingle.mp4",
+  "start": 39,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip048.mp4"
+ },
+ {
+  "clip": 49,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/07/media/videos/2168p30/OldSwarm.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip049.mp4"
+ },
+ {
+  "clip": 50,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip050.mp4"
+ },
+ {
+  "clip": 51,
+  "length": 74,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 394,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip051.mp4"
+ },
+ {
+  "clip": 52,
+  "length": 394,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/08/media/videos/2168p30/Machine.mp4",
+  "start": 468,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip052.mp4"
+ },
+ {
+  "clip": 53,
+  "length": 591,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/09/media/videos/2168p30/Outcomes.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip053.mp4"
+ },
+ {
+  "clip": 54,
+  "length": 148,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/01/media/videos/2168p30/Title.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip054.mp4"
+ },
+ {
+  "clip": 55,
+  "length": 246,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/02/media/videos/2168p30/Context.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip055.mp4"
+ },
+ {
+  "clip": 56,
+  "length": 985,
+  "loop": false,
+  "chapter": "/Users/minhtrinh/general-purpose/conversation-contexts/mixing-deluxe-presentation/manim-presenters/presentations/mixing-deluxe/build/03/media/videos/2168p30/OneJob.mp4",
+  "start": 0,
+  "path": "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p4/src/clip056.mp4"
+ }
+]

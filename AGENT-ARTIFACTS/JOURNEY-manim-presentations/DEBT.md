@@ -1,0 +1,7 @@
+# DEBT
+(discovered during work only)
+- mac-work-2 is shared with other agents' heavy jobs (2026-10-30 20:25: universe-rebase upload-review ran 16 `yes` burners; load 159). Wall-clock probe timings (P0/P2/P3 sweeps, P1 latency) must record load average beside each number and be re-run when load < 4; cost models prefer per-process rusage CPU time over wall time.
+- Audience clip switch at 3456×2168 shows a ~3-frame start burst (P1(b)); if Minh sees it at the live check, pre-load the next beat paused on frame 0 in a second QMediaPlayer (P1 measured even 33 ms pacing that way).
+- TinyTeX's installer bundle is pinned (2026.10) but packages come from the current CTAN repository; after the next TeX Live annual release, `tlmgr update --self` on an older bundle refuses cross-release updates. Bump TINYTEX_VERSION each year (the cache-id hashes texlive.tlpdb, so builds stay correct either way).
+
+- Presenter hot-swap: the `build_changed("")` re-check after adopting a deck has no test that isolates it. A build committed while the previous deck is opening is adopted anyway, because the macOS FSEvents backend delivers a folder event after the release (probe: with the re-check removed, one `build_id` read follows the release, from a Qt-loop folder event). The re-check stays as the guarantee that does not depend on that delivery; test_a_build_committed_while_the_last_one_opens_is_adopted checks the behaviour, not the line.

@@ -1,0 +1,23 @@
+{
+  "source_document_id": "1BIgjMBWBSSny2rUZ6OczJ-HqDonzqjUS1h53jKBMINI",
+  "source_url": "https://docs.google.com/document/d/1BIgjMBWBSSny2rUZ6OczJ-HqDonzqjUS1h53jKBMINI/edit",
+  "audit": "Native Docs resource has two inline objects and no positioned objects; full11-page PDF contains two images plus their alpha masks. Root personally viewed both original images and rendered pages6/7.",
+  "images": [
+    {
+      "path": "500-models-meme.png",
+      "source_object_id": "kix.f352mx7ipx3y",
+      "pdf_page": 6,
+      "checkpoints": "09.1",
+      "sha256": "9a4bc4523425bcd3c5309e0abeeedbfaa19d8e402d76b01176e823ae91bd9126",
+      "role": "Original two-panel 500-models meme. Show unchanged at the authored joke beat."
+    },
+    {
+      "path": "old-swarm-workflow.png",
+      "source_object_id": "kix.xr2ewgqrvv22",
+      "pdf_page": 7,
+      "checkpoints": "09.2–09.10",
+      "sha256": "643502f12ece640a5f893f07e0f17e0c2e816b7b5f388ba8cd6fcab0840bca5d",
+      "role": "Original transparent drawing. Black connector strokes require white-background reference inspection; redraw as vivid vector geometry on true black. Preserve coordinator fanout, staggered rows, both Startup/Train/Export and Startup/Eval/Export sequences, and repeat500times."
+    }
+  ]
+}

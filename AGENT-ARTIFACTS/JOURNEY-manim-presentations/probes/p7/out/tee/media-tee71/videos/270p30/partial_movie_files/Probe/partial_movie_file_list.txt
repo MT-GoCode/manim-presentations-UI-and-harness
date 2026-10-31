@@ -1,0 +1,6 @@
+# This file records the segment order used by Manim.
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee71/videos/270p30/partial_movie_files/Probe/uncached_00007.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee71/videos/270p30/partial_movie_files/Probe/uncached_00008.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee71/videos/270p30/partial_movie_files/Probe/uncached_00009.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee71/videos/270p30/partial_movie_files/Probe/uncached_00010.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee71/videos/270p30/partial_movie_files/Probe/uncached_00011.mp4'

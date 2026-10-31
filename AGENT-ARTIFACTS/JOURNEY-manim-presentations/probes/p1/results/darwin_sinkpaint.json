@@ -1,0 +1,429 @@
+{
+ "requested_backend": "darwin",
+ "stack": "sinkpaint",
+ "qt": "6.12.0",
+ "platform": "offscreen",
+ "dpr": 2.0,
+ "by_res": {
+  "3456x2168": {
+   "a": {
+    "raw": {
+     "holds_last_frame": false,
+     "runs": [
+      {
+       "reached_eom": false,
+       "last_presented_code": null,
+       "last_start_us": null,
+       "frames_presented": 0,
+       "distinct_codes": 0,
+       "invalid_after_eom": 0,
+       "sink_after_500ms": {
+        "valid": false
+       },
+       "state": "PlayingState"
+      }
+     ]
+    },
+    "reset": {
+     "holds_last_frame": false,
+     "runs": [
+      {
+       "reached_eom": false,
+       "last_presented_code": null,
+       "last_start_us": null,
+       "frames_presented": 0,
+       "distinct_codes": 0,
+       "invalid_after_eom": 0,
+       "sink_after_500ms": {
+        "valid": false
+       },
+       "state": "PlayingState"
+      }
+     ]
+    }
+   },
+   "f": {
+    "cover": [
+     {
+      "got": false,
+      "ms": null,
+      "first_index": null,
+      "first_start_us": null,
+      "frames_while_paused": 0,
+      "invalid": 0,
+      "state": "PausedState",
+      "status": "LoadingMedia"
+     }
+    ],
+    "cover_ok": false,
+    "cover_ms": {
+     "n": 0,
+     "median": null,
+     "max": null,
+     "min": null
+    },
+    "last_pts_us": 2966666.666666667,
+    "hold": {
+     "immediate@2966": [
+      {
+       "pos_ms": 2966,
+       "order": "immediate",
+       "got_last": false,
+       "ms_load": 1.0925420010607922,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "immediate@2967": [
+      {
+       "pos_ms": 2967,
+       "order": "immediate",
+       "got_last": false,
+       "ms_load": 0.6537080007547047,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "immediate@2999": [
+      {
+       "pos_ms": 2999,
+       "order": "immediate",
+       "got_last": false,
+       "ms_load": 1.12749999971129,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "after_loaded@2966": [
+      {
+       "pos_ms": 2966,
+       "order": "after_loaded",
+       "got_last": false,
+       "ms_load": 5004.3920420012,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "after_loaded@2967": [
+      {
+       "pos_ms": 2967,
+       "order": "after_loaded",
+       "got_last": false,
+       "ms_load": 5001.749375000145,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "after_loaded@2999": [
+      {
+       "pos_ms": 2999,
+       "order": "after_loaded",
+       "got_last": false,
+       "ms_load": 5002.252665999549,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ]
+    },
+    "hold_ok": {
+     "immediate@2966": false,
+     "immediate@2967": false,
+     "immediate@2999": false,
+     "after_loaded@2966": false,
+     "after_loaded@2967": false,
+     "after_loaded@2999": false
+    },
+    "hold_ms_from_setSource": {
+     "immediate@2966": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "immediate@2967": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "immediate@2999": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "after_loaded@2966": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "after_loaded@2967": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "after_loaded@2999": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     }
+    }
+   }
+  },
+  "1920x1080": {
+   "a": {
+    "raw": {
+     "holds_last_frame": false,
+     "runs": [
+      {
+       "reached_eom": false,
+       "last_presented_code": null,
+       "last_start_us": null,
+       "frames_presented": 0,
+       "distinct_codes": 0,
+       "invalid_after_eom": 0,
+       "sink_after_500ms": {
+        "valid": false
+       },
+       "state": "PlayingState"
+      }
+     ]
+    },
+    "reset": {
+     "holds_last_frame": false,
+     "runs": [
+      {
+       "reached_eom": false,
+       "last_presented_code": null,
+       "last_start_us": null,
+       "frames_presented": 0,
+       "distinct_codes": 0,
+       "invalid_after_eom": 0,
+       "sink_after_500ms": {
+        "valid": false
+       },
+       "state": "PlayingState"
+      }
+     ]
+    }
+   },
+   "f": {
+    "cover": [
+     {
+      "got": false,
+      "ms": null,
+      "first_index": null,
+      "first_start_us": null,
+      "frames_while_paused": 0,
+      "invalid": 0,
+      "state": "PausedState",
+      "status": "LoadingMedia"
+     }
+    ],
+    "cover_ok": false,
+    "cover_ms": {
+     "n": 0,
+     "median": null,
+     "max": null,
+     "min": null
+    },
+    "last_pts_us": 2966666.666666667,
+    "hold": {
+     "immediate@2966": [
+      {
+       "pos_ms": 2966,
+       "order": "immediate",
+       "got_last": false,
+       "ms_load": 1.1077079998358386,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "immediate@2967": [
+      {
+       "pos_ms": 2967,
+       "order": "immediate",
+       "got_last": false,
+       "ms_load": 0.713792000169633,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "immediate@2999": [
+      {
+       "pos_ms": 2999,
+       "order": "immediate",
+       "got_last": false,
+       "ms_load": 0.697584000590723,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "after_loaded@2966": [
+      {
+       "pos_ms": 2966,
+       "order": "after_loaded",
+       "got_last": false,
+       "ms_load": 5001.919541000461,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "after_loaded@2967": [
+      {
+       "pos_ms": 2967,
+       "order": "after_loaded",
+       "got_last": false,
+       "ms_load": 5000.775250000515,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ],
+     "after_loaded@2999": [
+      {
+       "pos_ms": 2999,
+       "order": "after_loaded",
+       "got_last": false,
+       "ms_load": 5002.130625000063,
+       "ms_from_setSource": null,
+       "ms_from_setPosition": null,
+       "presented_sequence": [],
+       "shown_before_last": null,
+       "final_index": null,
+       "final_start_us": null,
+       "invalid": 0,
+       "state": "PausedState"
+      }
+     ]
+    },
+    "hold_ok": {
+     "immediate@2966": false,
+     "immediate@2967": false,
+     "immediate@2999": false,
+     "after_loaded@2966": false,
+     "after_loaded@2967": false,
+     "after_loaded@2999": false
+    },
+    "hold_ms_from_setSource": {
+     "immediate@2966": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "immediate@2967": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "immediate@2999": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "after_loaded@2966": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "after_loaded@2967": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     },
+     "after_loaded@2999": {
+      "n": 0,
+      "median": null,
+      "max": null,
+      "min": null
+     }
+    }
+   }
+  }
+ },
+ "loaded_media_plugins": [
+  "libdarwinmediaplugin.dylib"
+ ],
+ "paint_ms": {
+  "n": 1,
+  "median": 10.164958999666851,
+  "max": 10.164958999666851,
+  "min": 10.164958999666851
+ },
+ "loaded_media_plugins_end": [
+  "libdarwinmediaplugin.dylib"
+ ]
+}

@@ -1,0 +1,3 @@
+# DEBT (sub-journey export)
+
+- Rare Chrome stale frame at `seeked` (once, CI 41184605858 on a slow runner: a jump raised d's fresh element reading its frame 0, not its target 24). Not reproduced in 920 probe trials (probes/seeked_probe4.py, seeked_probe5.py, with and without CPU load) nor in 280 repeated real-clip tests. If it recurs: probe the real failing sequence in the full suite on the runner with a screenshot at the swap (is the screen stale too, or only the canvas?) and compare `seeked` against the next requestVideoFrameCallback, which Chrome fires after a paused seek (P4); a Chrome-only signal would be an engine branch, so first look for a cause both engines share.

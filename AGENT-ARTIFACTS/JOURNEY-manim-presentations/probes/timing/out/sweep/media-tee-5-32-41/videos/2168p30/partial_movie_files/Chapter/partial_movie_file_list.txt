@@ -1,0 +1,11 @@
+# This file records the segment order used by Manim.
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00032.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00033.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00034.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00035.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00036.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00037.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00038.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00039.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00040.mp4'
+file 'file:/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/timing/out/sweep/media-tee-5-32-41/videos/2168p30/partial_movie_files/Chapter/uncached_00041.mp4'

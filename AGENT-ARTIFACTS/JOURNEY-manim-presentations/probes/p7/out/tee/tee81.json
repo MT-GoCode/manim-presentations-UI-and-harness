@@ -1,0 +1,36 @@
+{
+ "digests": [
+  [
+   8,
+   "c551416ecdb10c8575b7ffce1e4c787a56ba9bb43daa111757d5a4605e5a51b5"
+  ],
+  [
+   9,
+   "4d9cca7265846e4405447c82cbe23444f7c997a8fae0f394c898c20260f92135"
+  ],
+  [
+   10,
+   "1ece2a2a3c7652c463647f78da61257eb4f544aa2c66eb412b6eb564a4c78012"
+  ],
+  [
+   11,
+   "74e1274d3a3bbce1cbc588c03e14732a69c3b74c890e9a2980d03d3d26a3cfe6"
+  ]
+ ],
+ "parts": [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee81/videos/270p30/partial_movie_files/Probe/uncached_00008.mp4",
+  "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee81/videos/270p30/partial_movie_files/Probe/uncached_00009.mp4",
+  "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee81/videos/270p30/partial_movie_files/Probe/uncached_00010.mp4",
+  "/Users/minhtrinh/general-purpose/conversation-contexts/manim-presentations-harness/JOURNEY-manim-presentations/probes/p7/out/tee/media-tee81/videos/270p30/partial_movie_files/Probe/uncached_00011.mp4"
+ ],
+ "seconds": 0.1550019579990476,
+ "maxrss": 157417472
+}

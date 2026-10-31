@@ -1,0 +1,693 @@
+{
+  "format": "manim-presenters-transcript",
+  "version": 1,
+  "title": "Mixing Deluxe",
+  "slides": [
+    {
+      "id": "01",
+      "title": "Mixing Deluxe",
+      "transition": "Open from black; retain the same dark canvas into Context",
+      "checkpoints": [
+        {
+          "id": "01.1",
+          "title": "Title",
+          "narration": "Mixing Deluxe: optimizing every GPU minute in production mixing proxy models.",
+          "visual": "Reveal the title, then its subtitle. One small mix card becomes a GPU rectangle, establishing the shapes used throughout.",
+          "screen": [
+            "Mixing Deluxe",
+            "Optimizing every GPU minute in production mixing proxy models"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "title": "Context",
+      "transition": "Connected reveal from the title",
+      "checkpoints": [
+        {
+          "id": "02.1",
+          "title": "What a swarm does",
+          "narration": "A mixing study starts with different proportions of web, code, math, and other data. Each mix becomes a small model. We train it, evaluate it, and use those scores to decide which mixes are worth trying next.",
+          "visual": "Spread a few candidate cards across the frame. Each has a different colored proportion bar and the same 104M parameter label. Feed one card into a CPU circle, then a training GPU rectangle and an evaluation GPU rectangle.",
+          "screen": [
+            "104M",
+            "mix",
+            "TorchTitan training",
+            "Olmes evaluation"
+          ],
+          "notes": "The 104M card is the representative D0384_L03/Llama-3 model, not the smallest-model configuration used by the Zephon benchmarks. Sources: Gantavya report; old swarm_train_eval and torchtitan_train_eval graphs."
+        },
+        {
+          "id": "02.2",
+          "title": "First project",
+          "narration": "My  first project was working on these trainer and evaluator jobs: moving from TorchTitan plus Olmes to an integrated PyTorch train-eval job.",
+          "visual": "Box one row of CPU, training GPU and evaluation GPU, labeled First project: Move to pure pytorch. Leave the rest of the graph visible but subdued.",
+          "screen": [
+            "First project: Move to pure pytorch"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "title": "Project 1: Production-Ready Single Proxy Trainer",
+      "transition": "Move the boxed row to the top, then show the single job below it.",
+      "checkpoints": [
+        {
+          "id": "03.1",
+          "title": "One job",
+          "narration": "The first change was to make training and evaluation one job. Keep the model in the same process, give it a small, clear interface, and remove the handoff between two separate systems.",
+          "visual": "Move the boxed row to the top and disappear the rest of the workflow. Keep the purple box, remove its label, draw an arrow down, and show a single CPU and one GPU rectangle labeled PyTorch train-eval, with Single job to do train-eval below. The title stays at the top of the next slides.",
+          "screen": [
+            "Project 1: Production-Ready Single Proxy Trainer",
+            "PyTorch train-eval",
+            "Single job to do train-eval"
+          ],
+          "notes": "The integrated path uses transformers model components and PyTorch. 'PyTorch' does not imply no transformers dependency. Treat the card as a capability illustration, not the benchmark setup."
+        },
+        {
+          "id": "03.2",
+          "title": "Small and reliable",
+          "narration": "It scales to whatever GPUs are available with distributed data parallelism. It's merely two thousand lines, so it's easy to debug in production. The tests give very strong quality guarantees, so it just works: we trained a swarm with TorchTitan and with this job and compared them. And it's fully self-contained, eval suite included, so it's reliable to ship with no silent drift.",
+          "visual": "Grey out the starting workflow; keep the arrow and the single job central. Five benefit cards point out from the job, green payoffs beneath.",
+          "screen": [
+            "Distributed data parallelism | scale to what’s available",
+            "Merely 2K lines | Easy to debug in prod",
+            "Tests provide very strong quality guarantees | it just works!",
+            "torchtitan parity guarantees by training a swarm with torchtitan and this",
+            "Fully self-contained including the eval suite | reliable to ship, no silent drift"
+          ],
+          "notes": "Source scope: train.py, eval.py, models.py, eval_suite.py total 3,269 lines at the audit; orchestration/support files excluded. PRs 11776 and 12239 contain reported parity/evaluation verification. Do not fabricate measured curve samples; use a schematic comparison or source data."
+        },
+        {
+          "id": "03.3",
+          "title": "Highly configurable",
+          "narration": "All of it is driven by one input. It supports multiple Llama sizes. It reads pretokenized or raw text, from one stream, two, or sixty. And the compute backend is configurable: it's just a field: pick Kubernetes or Modal, the GPU, and the count. That makes it flexible to any production design and environment, and it saves FDE time.",
+          "visual": "Clear the benefits. An INPUT code box shows the job's input schema, with an elbow arrow into the central job; four benefits stack on the right with no connectors. When Adaptive compute backend appears, the ModalBackendOption and KubernetesBackendOption lines in the INPUT box are highlighted.",
+          "screen": [
+            "green|flexible to any prod design and environment, save FDE time",
+            "white|Multiple llama flavors",
+            "green|Input pretokenized, raw, or any arbitrary mix of 1, 2, or 60",
+            "rainbow|Configurable compute backend|KubernetesBackendOption, ModalBackendOption, GPU, and count"
+          ],
+          "code": "class MixingCandidateSeedTrainEvalInputs:\n    queue: str\n    backend_option: ModalBackendOption\n                  | KubernetesBackendOption\n    mix: dict[str, float]  # 1, 2, or 60 streams\n    tokenizer: str | None  # None: pretokenized\n    model: str = \"swarm_d0384_l03\"  # 7 Llama sizes\n    steps: int = 7630\n    eval_every: int | None = 500\n\nModalBackendOption(gpu=\"H100!:2\")\nKubernetesBackendOption(gpus=2)",
+          "notes": "A single run uses one stream kind; do not draw a hybrid raw-plus-pretokenized run. Historical per-run backends were ModalBackendOption/KubernetesBackendOption; new swarm API names appear later."
+        },
+        {
+          "id": "03.4",
+          "title": "Single job speedup",
+          "narration": "Putting training and evaluation into one job gave roughly a 1.25-times speedup.",
+          "visual": "Clear the benefits and show Two jobs, then an arrow to Single job, then a second arrow to the green ~1.25x speedup. The counter then docks on the right.",
+          "screen": [
+            "Two jobs",
+            "Single job",
+            "1.25x speedup"
+          ]
+        },
+        {
+          "id": "03.5",
+          "title": "Speedup Counter",
+          "narration": "That is the first number on the Speedup Counter. Let's go crazy.",
+          "visual": "Everything clears and the 1.25x speedup becomes a yellow-bordered Speedup Counter box in the center, with Let's go crazy! below it. The box then moves to the top right and stays there for the rest of the talk.",
+          "screen": [
+            "1.25x",
+            "Let's go crazy!"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "title": "Optimization 1: Compiled + Dense Eval loops",
+      "transition": "The counter stays at the top right; the title is fixed.",
+      "checkpoints": [
+        {
+          "id": "04.1",
+          "title": "What BPB measures",
+          "narration": "Evaluation asks how well the model predicts a continuation after reading its context. Take a toy continuation: the letter A, one UTF-8 byte. If the model gives its token probability one quarter, that costs two bits: minus log base two of one quarter. Two bits divided by one byte gives two bits per byte. Across a longer continuation, add the prediction bits and divide by its bytes. Lower is better.",
+          "visual": "Show context “Next letter:” in the context color and continuation “A” in the continuation color. This toy tokenizer emits A as one token. Carry p(A)=0.25 into −log₂(0.25)=2 bits, and the actual UTF-8 byte 0x41 into a one-byte denominator. Resolve 2 bits / 1 byte = 2 BPB. Keep context bytes and context predictions outside both accumulators; then fan out to longer pairs.",
+          "screen": [
+            "Optimization 1: Compiled + Dense Eval loops",
+            "A · 0x41 · 1 byte",
+            "p(A) = 0.25",
+            "−log₂(0.25) = 2 bits",
+            "2 bits / 1 byte = 2 BPB"
+          ],
+          "notes": "The numerical example is deliberately constructed, not a measured model prediction; A is one token in the toy and one UTF-8 byte. General BPB is negative summed natural-log likelihood divided by ln(2) and continuation UTF-8 bytes. Per-task result is mean document BPB, not a byte-weighted aggregate."
+        },
+        {
+          "id": "04.2",
+          "title": "A curve, not one score",
+          "narration": "We do this across thousands of pairs, at checkpoints during training and once more at the end. Each evaluation gives another point on the learning curve.",
+          "visual": "Show training segments interrupted by small evaluation segments. Each evaluation emits a point into a BPB-versus-training-tokens curve. Hold the final curve, with no invented numerical y-values.",
+          "screen": [
+            "training tokens",
+            "BPB"
+          ],
+          "notes": "Mid-training sample evaluation defaults to every 500 steps and up to 50 documents per task; full evaluation follows the final step. The curve is schematic unless actual source scores are supplied."
+        },
+        {
+          "id": "04.3",
+          "title": "The old handoff",
+          "narration": "The old workflow exported a Hugging Face checkpoint, started a separate evaluator, and loaded the model again. Olmes then ran its evaluation tasks through the inference backend. That handoff added setup and repeated model-loading work around the actual scoring.",
+          "visual": "Temporarily contrast export, external storage, evaluator startup, reload and task preparation with the integrated job. Trace the same weights through each handoff.",
+          "screen": [
+            "export",
+            "startup",
+            "reload",
+            "score"
+          ],
+          "notes": "Verified old graph scores the final checkpoint and supports optional separate conversion. Olmes defaults to vLLM. Do not claim every old periodic evaluation paused the same live training job or that a model reload happened for each task."
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "title": "Optimization 2: Custom training kernels",
+      "transition": "The counter stays at the top right; the title is fixed.",
+      "checkpoints": [
+        {
+          "id": "05.1",
+          "title": "Normal flow",
+          "narration": "Normally the LM head writes logits for the whole microbatch, cross-entropy reads them back to compute the loss, and calling backward makes PyTorch compute the logit gradients and then the two matmuls for dH and dW.",
+          "visual": "Left: the four steps of the normal flow, GPU steps as purple rectangles and CPU steps as yellow circles.",
+          "screen": [
+            "Optimization 2: Custom training kernels",
+            "Normal flow",
+            "gpu|GPU · forward|LM-head matmul writes the full microbatch of logits",
+            "gpu|GPU · forward|Cross-entropy reads the logits and computes the loss",
+            "cpu|CPU call|loss.backward() starts backward",
+            "gpu|GPU · backward|PyTorch computes the logit gradients, then two matmuls give dH and dW"
+          ]
+        },
+        {
+          "id": "05.2",
+          "title": "QuACK base flow",
+          "narration": "QuACK loops over token chunks. For each chunk it computes the logits, computes the loss while overwriting those logits with their gradients, and runs the dH matmul and most of the dW matmuls. Backward then only scales the prepared gradients and finishes the last dW matmul.",
+          "visual": "Right: the four steps of the QuACK base flow beside the normal flow.",
+          "screen": [
+            "QuACK base flow",
+            "cpu|CPU orchestration|Loop over token chunks and launch the GPU work",
+            "gpu|GPU · QuACK forward|Per chunk: compute logits; compute the loss and overwrite the logits with their gradients; run the dH matmul and most dW matmuls",
+            "cpu|CPU call|loss.backward() starts backward",
+            "gpu|GPU · QuACK backward|Scale the prepared gradients and finish the last dW matmul"
+          ]
+        },
+        {
+          "id": "05.3",
+          "title": "Kernel speedup",
+          "narration": "Less memory traffic, a bounded working set, and a compiled training path give another substantial gain. That brings the counter to about two times.",
+          "visual": "Bring the counter forward, update 1.44× to 2× only on this click, then dock it.",
+          "screen": [
+            "1.44x",
+            "2x"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "06",
+      "title": "Optimization 3: Make Zephon live tokenization go brrr",
+      "transition": "Deliberate black chapter break, then reveal the data pipelines",
+      "checkpoints": [
+        {
+          "id": "06.1",
+          "title": "Live tokenization",
+          "narration": "Live tokenization lets a mixing proxy change tokenizers without rebuilding every dataset. Pretokenized IDs still take the direct route.",
+          "visual": "Reveal one fixed Zephon canvas: a live-text raw-shard-to-GPU lane, a separate token-ID lane that bypasses the tokenizer, three framed regions below, and the persistent approximate 2× rail. The rate rows and feature cards remain unrevealed.",
+          "screen": [
+            "LIVE TEXT",
+            "raw shards",
+            "tokenizer",
+            "PRETOKENIZED",
+            "token IDs",
+            "tokenizer bypass",
+            "approx. 2×"
+          ],
+          "notes": "Keep this as a capability explanation, not a measured DeepSeek GPU-hour equality claim."
+        },
+        {
+          "id": "06.2",
+          "title": "Starved models",
+          "narration": "The old live-text path fetched, encoded and packed on the CPU. Small proxy models consume batches fast, so gaps there leave GPU time idle.",
+          "visual": "On the same canvas, outline the live queue and add a GPU-waiting callout; leave the pretokenized bypass and panel frames in place.",
+          "screen": [
+            "GPU waiting"
+          ],
+          "notes": "Pipeline drawing is conceptual; the hub is orchestration, not a mandatory serial payload stage. Do not claim a specific global op order for all Zephon configurations."
+        },
+        {
+          "id": "06.3",
+          "title": "The measured gap",
+          "narration": "On Text++ with four H100s, HF live delivered 2.77 and 2.72 million tokens a second; ready batches reached 5.34 and 5.31.",
+          "visual": "Reveal the ready-batch ceiling and HF-live paired rates in the left Text++ panel. Keep the v1 row and right-panel rates hidden.",
+          "screen": [
+            "Text++ · MTok/s",
+            "ready ceiling 5.34 / 5.31",
+            "HF live 2.77 / 2.72"
+          ],
+          "notes": "PR 77 main-v1-tokenize-mtextpp.png: HF legend 2.77/2.72, ceiling 5.34/5.31. These are trainer throughput/ready-batch ceiling, not standalone loader benchmarks."
+        },
+        {
+          "id": "06.4",
+          "title": "A faster tokenizer",
+          "narration": "Faster tokenizer engines, including the v1 work and Luke's arrow-tokenize, reduced encoding cost. The bottleneck moved into the rest of the loader.",
+          "visual": "Retire the waiting callout, pulse the live tokenizer, and move the amber focus from queue to pack on the same pipeline.",
+          "screen": [
+            "pack"
+          ],
+          "notes": "Credit Luke's arrow-tokenize without asserting it is the engine used by PR 77. The standalone 50–100× figure lacks a source in the requested PRs, so do not invent that numeric label."
+        },
+        {
+          "id": "06.5",
+          "title": "Faster is not finished",
+          "narration": "The v1 live path rose to 3.19 and 3.20 on that same Text++ setup, better but below its ready-batch ceiling.",
+          "visual": "Reveal the v1 live 3.19 / 3.20 paired rate beneath HF live in the fixed Text++ panel.",
+          "screen": [
+            "v1 live 3.19 / 3.20"
+          ],
+          "notes": "PR 77 plot v1 repetitions 3.19/3.20. Do not compare this directly as a time series with the later double-stream experiment."
+        },
+        {
+          "id": "06.6",
+          "title": "The mission",
+          "narration": "End-to-end A/B throughput mattered more than isolated tokenization speed. The two paired live rows show the remaining gap.",
+          "visual": "Remove the pack focus and outline the two Text++ live rows together for the end-to-end A/B comparison.",
+          "screen": [
+            "HF live",
+            "v1 live"
+          ],
+          "notes": "Specific A/B measurements in PRs 69/70/71/77 support the mechanisms. Counter figures remain Minh's approximate cumulative observations."
+        },
+        {
+          "id": "06.7",
+          "title": "Garbage collection",
+          "narration": "One fix freezes the hub's long-lived startup objects before data flows. On a separate single-stream test, median full-GC pauses fell from 432 to 132 milliseconds.",
+          "visual": "Reveal the Freeze hub objects card inside the center panel. Above it, show the two-line note that explicitly scopes the 432 to 132 ms median full-GC pause to a separate single-stream test.",
+          "screen": [
+            "Freeze hub objects",
+            "single stream · median full-GC pause",
+            "432 → 132 ms"
+          ],
+          "notes": "PR 69: this is cyclic garbage collection, not refcount-triggered scanning. GC and refcounting continue. Single-stream median full-GC pause reported 432ms to 132ms; do not generalize to all mixes."
+        },
+        {
+          "id": "06.8",
+          "title": "Packing integers",
+          "narration": "Packing now emits int64 positions directly, avoiding a per-batch conversion and a torch CPU thread-pool wakeup.",
+          "visual": "Retire the temporary GC note and reveal the int64 positions card beside the freeze card.",
+          "screen": [
+            "int64 positions"
+          ],
+          "notes": "PR 70 concerns position indices, not token compression. Its ~96% result is the re-fed live-batch ceiling, not a standalone full-pipeline result."
+        },
+        {
+          "id": "06.9",
+          "title": "Cache lock",
+          "narration": "Cache hits read shared state concurrently. Misses and missing-file repair still coordinate under locks.",
+          "visual": "Reveal the concurrent cache-hit card; keep its coordinate-misses subtitle visible so the missed-shard path is not presented as lock-free.",
+          "screen": [
+            "Cache hits concurrent",
+            "coordinate misses"
+          ],
+          "notes": "PR 71. Do not animate all cache operations as lock-free. Reported microbench cache-hit improvement is 5–7×, distinct from end-to-end training gains."
+        },
+        {
+          "id": "06.10",
+          "title": "Encode without fighting the workers",
+          "narration": "The v1 wrapper encodes once per text, preventing nested tokenization workers from competing with data-loader workers.",
+          "visual": "Reveal the one-encode-per-text card. The four mechanisms now fill the center grid without moving the pipelines or rate panels.",
+          "screen": [
+            "One encode per text"
+          ],
+          "notes": "PR 77: encode_batch ignores the RAYON_NUM_THREADS constraint in the observed v1 path. Keep unsupported tokenizer options out of the talk."
+        },
+        {
+          "id": "06.11",
+          "title": "Live catches up",
+          "narration": "In a separate double-stream run on four H100s, lock-free live loading reached 4.98 and 5.06 million tokens per second, near the 5.17 and 4.95 ready-batch measurements.",
+          "visual": "Reveal the four source-paired rows in the already titled double-stream panel: ready ceiling, pretokenized, live with lock, and live lock-free. Keep the Text++ panel visible as a distinct workload, with no fabricated time series.",
+          "screen": [
+            "double stream · MTok/s",
+            "ready ceiling 5.17 / 4.95",
+            "pretokenized 4.59 / 4.57",
+            "live with lock 4.29 / 4.36",
+            "live lock-free 4.98 / 5.06"
+          ],
+          "notes": "PR 71 body and cache-hit-m2.png. Live lock-free plot legend 4.98/5.06, pretokenized 4.59/4.57, ceiling 5.17/4.95. This is not a universal guarantee and is not the Text++ plot from the previous slide."
+        },
+        {
+          "id": "06.12",
+          "title": "Research benefit",
+          "narration": "That closes much of the old convenience penalty: we can try another tokenizer while retaining the research workflow.",
+          "visual": "Change only the live-lane tokenizer label to new tokenizer. The pretokenized token-ID bypass, measured panels, and mechanism cards stay fixed.",
+          "screen": [
+            "new tokenizer",
+            "tokenizer bypass"
+          ],
+          "notes": "This states the capability and intended benefit, not a controlled measurement of equal DeepSeek GPU-hours."
+        },
+        {
+          "id": "06.13",
+          "title": "Four times",
+          "narration": "In the talk's approximate cumulative counter, this is the step from about two times to about four times.",
+          "visual": "Morph the persistent center-bottom narrative counter from approx. 2× to approx. 4× in place. The source-paired rate panels remain visible and distinct.",
+          "screen": [
+            "2x",
+            "4x"
+          ]
+        },
+        {
+          "id": "06.14",
+          "title": "The money shot",
+          "narration": "Here is the whole story. A single job, packed and compiled evaluation, custom kernels, and live tokenization took one 104-million-parameter proxy model's train-eval job to about four times faster.",
+          "visual": "The Speedup Counter sits at 4x in the center with the title 104M proxy model train-eval job speedup above it. Four colored elbow arms point out to a summary of each optimization.",
+          "screen": [
+            "104M proxy model train-eval job speedup",
+            "Single job · 1.25x",
+            "Packed, compiled eval · 1.44x",
+            "Kernels + compilation · 2x",
+            "Live tokenization · 4x"
+          ]
+        },
+        {
+          "id": "06.15",
+          "title": "Counter returns",
+          "narration": "Now the question is what happens when you run five hundred of these.",
+          "visual": "The summary clears and the counter returns to the top right.",
+          "screen": []
+        }
+      ]
+    },
+    {
+      "id": "07",
+      "title": "Current Swarm Workflow",
+      "transition": "Intentional black break; start the wider workflow picture",
+      "checkpoints": [
+        {
+          "id": "07.1",
+          "title": "One model versus a swarm",
+          "narration": "So one model is much better fed, and the train-eval job is much faster. But what about a swarm of five hundred models at once?",
+          "visual": "On this click show the original 500-models meme from assets/500-models-meme.png at large readable size. Preserve the two-panel joke and its existing models caption; do not replace it with a generic grid. Keep the completed approximate 4× counter docked. The next click opens the workflow drawing.",
+          "screen": [
+            "500 models"
+          ],
+          "notes": "Original embedded image kix.f352mx7ipx3y in the Google Doc, immediately after Show this on click. Downloaded and personally inspected with page6 context.",
+          "asset": "assets/500-models-meme.png"
+        },
+        {
+          "id": "07.2",
+          "title": "One workflow per model",
+          "narration": "It fans out into a train-eval workflow for every model, each with its own orchestration.",
+          "visual": "Following the original workflow drawing, grow branches from the single coordinator into six representative per-model CPU circles at staggered horizontal start positions. Label repeat500times. Show the branches and circles before any GPU segments.",
+          "screen": [
+            "per-model workflows",
+            "500 models"
+          ]
+        },
+        {
+          "id": "07.3",
+          "title": "Trainer startup",
+          "narration": "Each training job first pays GPU startup.",
+          "visual": "On this click extend a red startup segment from each branch CPU circle into its training GPU rectangle. Keep a shared left-to-right time axis and hold before training.",
+          "screen": [
+            "GPU startup"
+          ],
+          "notes": "Startup GPU occupancy is schematic for this depicted workflow, not every deployment."
+        },
+        {
+          "id": "07.4",
+          "title": "Training",
+          "narration": "Then it trains the model.",
+          "visual": "On this click append a bright training segment after each trainer startup. Move tokens through the GPU rectangles. Preserve the earlier CPU and startup regions.",
+          "screen": [
+            "train"
+          ]
+        },
+        {
+          "id": "07.5",
+          "title": "Export",
+          "narration": "Then it exports the checkpoint for the separate evaluator.",
+          "visual": "Append the first red Export interval to each training GPU timeline, as in the original drawing, and carry the same checkpoint toward the evaluator. These are schematic elapsed workflow phases; any CPU-writing close-up must preserve the drawing’s red overhead band.",
+          "screen": [
+            "export",
+            "checkpoint"
+          ],
+          "notes": "The original drawing explicitly shows Startup/Train/Export followed by Startup/Eval/Export. Preserve that visible sequence. Diagram durations are schematic and do not claim every export operation executes on GPU."
+        },
+        {
+          "id": "07.6",
+          "title": "Evaluator startup",
+          "narration": "The evaluation job pays another startup and loads those weights.",
+          "visual": "On this click reveal the evaluator GPU rectangle and its red startup segment. Move the stored checkpoint into it; stop before scoring.",
+          "screen": [
+            "evaluator startup",
+            "reload"
+          ]
+        },
+        {
+          "id": "07.7",
+          "title": "Evaluation",
+          "narration": "Only then does it score. On a large swarm, this orchestration, startup, export, and evaluation handoff repeats hundreds of times.",
+          "visual": "Append the light useful-work Eval interval after the second red Startup interval, following the original drawing. Keep all preceding phases visible. Hold before the drawing’s final Export interval.",
+          "screen": [
+            "eval",
+            "repeated overhead"
+          ]
+        },
+        {
+          "id": "07.8",
+          "title": "The costs",
+          "narration": "This is expensive and inflexible. CPU scheduling clogs the swarm, every model pays GPU hours for repeated overhead, it only fits fixed-capacity clusters, it can't burst, and a claimed GPU can't be reused without scheduling again.",
+          "visual": "The finished workflow slides left and five red costs appear on the right.",
+          "screen": [
+            "CPU scheduling clogs swarm",
+            "GPU hours paying repeated overhead",
+            "Only compatible with fixed-cap clusters",
+            "Not scalable to bursted compute",
+            "Claimed GPU can't reuse, need schedule anew"
+          ]
+        },
+        {
+          "id": "07.9",
+          "title": "Clear",
+          "narration": "So let's rebuild this workflow from the ground up.",
+          "visual": "Everything clears except the Speedup Counter in the top right.",
+          "screen": []
+        }
+      ]
+    },
+    {
+      "id": "08",
+      "title": "[In Progress] A well-oiled swarm machine",
+      "transition": "One continuous scene: new workflow, four feature slides, status, and the final counter zoom.",
+      "checkpoints": [
+        {
+          "id": "08.1",
+          "title": "A queue and warm workers",
+          "narration": "In the new workflow, one CPU fills a task queue with many tasks, and a stack of warm, cache-reuse workers pulls from it. Finished train checkpoints and evals land on the right.",
+          "visual": "CPU, a full task queue, a stack of warm workers and a finished-swarm box.",
+          "screen": []
+        },
+        {
+          "id": "08.2",
+          "title": "Tasks flow (loop)",
+          "narration": "Tasks keep flowing from the queue to whichever worker is free, and the queue refills. This slide loops for as long as you watch.",
+          "visual": "Looped: each worker takes the next queued task and the queue refills.",
+          "screen": []
+        },
+        {
+          "id": "08.3",
+          "title": "Add a worker",
+          "narration": "Need more speed? Burst a new worker onto the top of the stack.",
+          "visual": "A worker is added on top of the stack.",
+          "screen": []
+        },
+        {
+          "id": "08.4",
+          "title": "Four workers (loop)",
+          "narration": "With four workers, tasks go out faster. Same loop.",
+          "visual": "Looped with four workers.",
+          "screen": []
+        },
+        {
+          "id": "08.5",
+          "title": "Two workers die",
+          "narration": "Two workers die. Machines get preempted, and nothing falls over.",
+          "visual": "Two workers are crossed out and removed.",
+          "screen": []
+        },
+        {
+          "id": "08.6",
+          "title": "Tasks keep going (loop)",
+          "narration": "The remaining workers keep taking tasks and the swarm finishes anyway.",
+          "visual": "Looped with the two remaining workers.",
+          "screen": []
+        },
+        {
+          "id": "08.7",
+          "title": "Async CPU threads",
+          "narration": "Every non-GPU step, like exporting and uploading checkpoints, runs on asynchronous CPU threads, so the GPU keeps training.",
+          "visual": "GPU lane trains candidates back to back while CPU threads export and upload in the shadow of the next training.",
+          "screen": [
+            "Async CPU threads for all non-GPU work ensures every GPU second goes to training"
+          ]
+        },
+        {
+          "id": "08.8",
+          "title": "Warm caches",
+          "narration": "Between candidates, the warm job keeps the tokenizer, the compiled model, and the data shards, so only the first candidate pays for setup.",
+          "visual": "Candidate rows: the first pays tokenizer, compile and dataloader setup; later rows show thin cached bars and finish sooner.",
+          "screen": [
+            "Tokenizer, compiled model, and dataloader caching saves even more time between candidates"
+          ]
+        },
+        {
+          "id": "08.9",
+          "title": "Minimal work",
+          "narration": "The head node decides the minimum work each swarm model needs: a full train, a resumed train, or just a new eval.",
+          "visual": "A head CPU branches to three candidates with progress bars: full train, resume train, new eval only.",
+          "screen": [
+            "Head node determines the minimal amount of work each swarm model needs to do"
+          ]
+        },
+        {
+          "id": "08.10",
+          "title": "Ergonomic API",
+          "narration": "One line of config selects the GPU and count on Modal, or sends the same swarm to a Kubernetes queue. The same actor works on both, and you just pass a list of training configs while we handle the infrastructure.",
+          "visual": "INPUT: the algorithmic-mixing swarm call from the first victory lap, with the Modal backend line highlighted and an elbow arrow to the Kubernetes alternative; two short notes on the right.",
+          "screen": [
+            "Ergonomic API with|one line config|to select GPU and switch between bursty Modal compute|or fixed-size Karpenter",
+            "backend=KubernetesFanOut(queue=H100_QUEUE, width=12)",
+            "Datology Actor that works on both K8s & Modal",
+            "Simply pass in a list of training configs (archs, sizes, mixes, etc.), we handle the infra"
+          ],
+          "code": "draws = np.random.default_rng(1).dirichlet(np.ones(5), 30)\nsearch = start(SwarmProxyTrainEvalConfig(\n    swarm=[config(dict(zip(GROUPS, d))) for d in draws],\n    repeats=2,\n    ranker=Ranker(compare=COMPARE),\n    backend=ModalFanOut(gpu=GpuType.H100, width=12),\n))"
+        },
+        {
+          "id": "08.11",
+          "title": "Algorithmic mixing",
+          "narration": "Algorithmic mixing is one swarm call over thirty random mixes. The steps that aren't swarm calls shrink to a few lines each.",
+          "visual": "The first victory lap's code, with the non-swarm steps reduced to short comments.",
+          "screen": [
+            "Algorithmic mixing in",
+            "just a few lines"
+          ],
+          "code": "# 5 lines: 30 random mixes of text++'s five stream groups\ndraws = np.random.default_rng(1).dirichlet(np.ones(5), 30)\n\n# Step 1. Train the random mixes, twice each.\nsearch = start(SwarmProxyTrainEvalConfig(\n    swarm=[config(dict(zip(GROUPS, d))) for d in draws],\n    repeats=2,\n    ranker=Ranker(compare=COMPARE),\n    backend=ModalFanOut(gpu=GpuType.H100, width=12),\n))\n\n# Steps 2-3. ~10 lines: is the batch readable? Fit one log-linear\n#   law per task and check it out of sample.\n# Step 4. optimize_mixture(...): the law's one-shot argmin, p*.\n# Step 5. Validate p*, uniform, text++'s split and the best random\n#   mix on fresh seeds (repeats=4, seed=2).\n# Step 6. Report: predicted vs measured, each with its error bar."
+        },
+        {
+          "id": "08.12",
+          "title": "Mixing phase workflow",
+          "narration": "Phasing is two functions. The parent trains on the first mix until the learning rate decays, and the child continues the same model on a new mix.",
+          "visual": "The phasing lap's parent and child functions from SYSTEM.md.",
+          "screen": [
+            "Mixing phase workflow in",
+            "just a few lines"
+          ],
+          "code": "# Phase 1: text++'s own mix, until the LR decay begins.\ndef parent(model):\n    n, k, full = split(model)\n    return ProxyTrainEvalConfig(model=model, mix=P1, steps=k,\n                                lr_schedule=full[:k], checkpoints=Checkpoints.ALL)\n\n# Phase 2: the same model, optimizer and LR continue on a new mix.\ndef child(model, parent_id, mix):\n    n, k, full = split(model)\n    return ProxyTrainEvalConfig(model=model, mix=mix,\n                                start_from=RunRef(train_id=parent_id), steps=n - k,\n                                lr_schedule=full[k:], checkpoints=Checkpoints.FINAL)\n\n# 5 lines: split() cuts one LR schedule where its decay begins.\n# Step 2. 30 sampled phase-2 mixes branch from the small parent at once."
+        },
+        {
+          "id": "08.13",
+          "title": "Working today and still to do",
+          "narration": "Here is what is working today, and what is left.",
+          "visual": "Left: what has been shown and works. Right: what is left, some labeled research.",
+          "screen": [
+            "10–20 swarm models on K8s and Modal;Warm actors, cached setup;Async export threads;One-line backend switch",
+            "Resume and eval-only planning;Results returned from start();EWMA model merging|[research];MoE swarms|[research];Multiphase mixing|[research];Get Luke's review"
+          ]
+        },
+        {
+          "id": "08.14",
+          "title": "Full swarms",
+          "narration": "And that is the full five-hundred-model mixing swarm: four times, and a lot more.",
+          "visual": "The counter zooms to the center showing 4x + A LOT, labeled Full 500-model mixing swarms.",
+          "screen": [
+            "Full 500-model mixing swarms",
+            "4x + A LOT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "09",
+      "title": "So what?",
+      "transition": "Intentional clean break from code to outcomes",
+      "checkpoints": [
+        {
+          "id": "09.1",
+          "title": "GPU-hours cut",
+          "narration": "GPU-hours are cut by more than half on proxy training swarms, thanks to a stack rebuilt from the ground up: fully compiled train and eval loops, GPU parallelism, custom kernels, and packed-tensor evals. That directly saves customer compute.",
+          "visual": "The counter docks and the headline appears with the first point.",
+          "screen": [
+            "So what?",
+            "GPU-hours cut by more than half on proxy training swarms",
+            "Compiled train and eval loops, GPU parallelism, custom kernels and packed-tensor evals, directly saving customer compute"
+          ]
+        },
+        {
+          "id": "09.2",
+          "title": "One config line",
+          "narration": "One config line adapts 500-model swarms to bursty Modal or fixed-capacity Karpenter, with a pool of warm actors that have caches and async operations, so every GPU second goes to training. This replaces 500 separate Flyte workers that each paid their own scheduling and startup overhead.",
+          "visual": "Second point.",
+          "screen": [
+            "One config line: bursty Modal or fixed-capacity Karpenter",
+            "Warm actors with caches and async ops put every GPU second into training, replacing 500 Flyte workers that each paid scheduling and startup overhead"
+          ]
+        },
+        {
+          "id": "09.3",
+          "title": "Live tokenization",
+          "narration": "Live tokenization in Zephon is optimized to match pretokenized dataloading speed and saturate even the most data-hungry small proxy models, which simplifies research flows.",
+          "visual": "Third point.",
+          "screen": [
+            "Live tokenization in Zephon matches pretokenized dataloading speed",
+            "Saturates even the most data-hungry small proxy models, simplifying research flows"
+          ]
+        },
+        {
+          "id": "09.4",
+          "title": "The swarm API",
+          "narration": "A tiny swarm API, Model1 through Model500, is in progress. It bundles these improvements and also supports MoEs, model merging, multi-phase mixing, and scaling-law studies, speeding up research iteration and setting up algorithmic mixing in product. I'm excited to help out on both.",
+          "visual": "Fourth point, tagged in progress.",
+          "screen": [
+            "swarm(Model1, Model2, ..., Model500): a tiny API",
+            "Bundles these improvements and adds MoEs, model merging, multi-phase mixing and scaling-law studies, speeding up research iteration and setting up algorithmic mixing in product. Excited to help out on both!",
+            "[in progress]"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "10",
+      "title": "Questions",
+      "transition": "Clean black break after the workflow ending",
+      "checkpoints": [
+        {
+          "id": "10.1",
+          "title": "Questions",
+          "narration": "Questions.",
+          "visual": "Fade in a single centered question mark on true black and hold.",
+          "screen": [
+            "?"
+          ]
+        }
+      ]
+    }
+  ],
+  "description": "Optimizing every GPU minute in production mixing proxy models. Full narration and animation checkpoints for Minh’s technical company presentation. Source references and corrections are in the private notes; these are not audience-facing text.",
+  "target_minutes": 20,
+  "status": "18 chapters and 74 rendered manual checkpoints. Native two-window playback, private notes, navigation, and restart persistence are verified. Minh waived spoken timing and will adjust pacing and narration himself.",
+  "conventions": {
+    "audience": "True-black fullscreen canvas fitted to the actual display; CPU work is a circle, GPU work a rectangle. Narration is private. Short labels, values and code only on the audience canvas.",
+    "navigation": "Each checkpoint plays its incoming animation and holds. Advance manually. Deliberate black slide breaks are allowed; no accidental blank frames inside connected technical sequences.",
+    "counter": "Approximate cumulative observations approved by Minh. Small 'approx.' label and restrained number styling. Completed single-job ladder: 1.25×, 1.44×, 2×, 4×. The Doc's 4.5× + a lot beat is explicitly Upcoming, visually separate from completed improvements.",
+    "sources": "../../../EVIDENCE.md; ../../../sources/outline.txt; the source ledger's pinned code/PR revisions. Code on upcoming slides illustrates intended APIs; it is not claimed as an executed demo.",
+    "matrices": "Tokens are rows. H:[tokens,hidden], W:[vocabulary,hidden], Z=H·Wᵀ:[tokens,vocabulary], dH=dZ·W, dW=dZᵀ·H. Show one token/product first, then the full shapes; transposes are visible."
+  },
+  "review": {
+    "scope": "All authored slides and checkpoints are counted by export-script.mjs; all API examples are planned excerpts, not executed demos.",
+    "provenance": "See each checkpoint's private note and EVIDENCE.md. Narration retains Minh's recollections, estimates and future-facing swarm framing.",
+    "source_snapshot": "sources/outline.txt in the parent topic folder, fetched read-only from the Google Doc; original Doc unchanged."
+  }
+}
