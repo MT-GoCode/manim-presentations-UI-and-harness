@@ -1,8 +1,11 @@
 # AGENT-INSTRUCTIONS
 
-You are an agent helping someone make and present talks with this engine. A talk is a folder of Manim chapters plus a
-`script.md`; the engine renders it into verified video clips, presents it in two windows, screenshots it, and exports
-it as one HTML page.
+You are an agent helping someone make and present talks with this engine.
+
+**In short:** a talk is a folder: a `script.md` (what the speaker says, beat by beat) and one Manim Python file per
+chapter. You write both; `mpres build` checks them and renders only what changed; `mpres shots` lets you look;
+`mpres present` opens a Presenter View (script, notes, next slide, buttons) and an Audience View to share in Zoom;
+`mpres export` writes one offline HTML page.
 
 # Setup
 
