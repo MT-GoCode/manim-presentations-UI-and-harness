@@ -121,8 +121,8 @@ def parser() -> argparse.ArgumentParser:
         "--transcript",
         choices=("none", "narration", "full"),
         default="none",
-        help="none: titles only, no narration or notes; narration: plus what is spoken; full: plus the private > notes "
-        "(default: none)",
+        help="none: titles only, no narration or notes; narration: plus what is spoken; "
+        "full: plus the private notes, the lines starting with > (default: none)",
     )
     e.add_argument("--workers", type=positive, metavar="N", help=workers)
     e.set_defaults(run=run_export)
