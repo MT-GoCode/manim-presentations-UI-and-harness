@@ -10,8 +10,8 @@ Manim touches here (each tested one to one in tests/unit/test_hooks.py):
   `file_writer.add_partial_movie_file`, `begin_animation`, `end_animation` and `write_frame`;
 - the partial-file mapping: `file_writer.partial_movie_files`, one entry per play (None for skipped ones);
 - the loop-closure capture points: `renderer.render` (a play's first frame, after `update_to_time(0)`) and
-  `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws on a fresh, unpatched `Camera`
-  in Manim's order: the play's `static_mobjects`, then its `moving_mobjects` (which include the foreground);
+  `renderer.freeze_current_frame` (a frozen wait's frame); the canonical raster draws the scene's mobjects and
+  foreground on a fresh, unpatched `Camera` in one `capture_mobjects` call;
 - the size references: `Paragraph.__init__` (its Text lives off the scene family, in `lines_text`), and the
   observation-only shadow on `Transform.clean_up_from_scene` (when its mobject stays on screen) and `Mobject.become`:
   the text classes' own `initial_height`, `font_size`, `height` and `submobjects` are read, never written."""
@@ -146,20 +146,15 @@ def on_first_frame(scene: Any, callback: Any) -> None:
 
 
 def canonical_raster(scene: Any) -> np.ndarray:
-    """The scene's current state drawn whole on a fresh camera (the Recorder never involved), in the z-order Manim
-    gives a frame: the current play's static mobjects, then its moving ones, then anything since added (a remover's
-    clean-up takes mobjects out of the scene but not out of the play's lists; a replacement's clean-up adds its
-    target to the scene but not to them)."""
+    """The scene's current state drawn whole on a fresh camera (the Recorder never involved). One call draws in
+    Manim's frame order: a play's static/moving split is a prefix/suffix of the z-sorted family list, and
+    capture_mobjects z-sorts each call. Only mobjects in the scene are drawn: a remover's clean-up takes its mobject
+    out of the scene but not out of the play's lists."""
     from manim.camera.camera import Camera
 
-    present = [*scene.mobjects, *(m for m in scene.foreground_mobjects if m not in scene.mobjects)]
-    static = [m for m in scene.static_mobjects or [] if m in present]
-    moving = [m for m in scene.moving_mobjects or [] if m in present]
-    rest = [m for m in present if m not in static and m not in moving]
     camera = Camera()
     camera.reset()
-    for group in (static, moving, rest):
-        camera.capture_mobjects(group)
+    camera.capture_mobjects([*scene.mobjects, *(m for m in scene.foreground_mobjects if m not in scene.mobjects)])
     return camera.pixel_array.copy()
 
 
