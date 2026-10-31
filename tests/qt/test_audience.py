@@ -203,6 +203,37 @@ def test_a_play_after_a_loop_plays_once_and_holds(rig, clips):
     assert shows(view.sink.videoFrame()) == ("b", FRAMES - 1)
 
 
+SWITCHES = 10  # the outgoing clip's late frames hit about 1 switch in 4 (review r3), so 10 catch it near-surely
+
+
+@pytest.mark.parametrize("to", ["play", "loop", "cover"])
+def test_a_switch_from_a_running_loop_reports_only_the_new_clip(rig, clips, qtbot, to):
+    """Next during a loop: the outgoing clip's frames still arriving must never be reported for the new message."""
+    view, client, presented = rig
+    a, b = str(clips["a"]), str(clips["b"])
+    for n in range(SWITCHES):
+        client.send(p.Loop(position=at("x"), clip=a))
+        assert client.next().state == "looping"
+        mark = len(presented)
+        qtbot.waitUntil(lambda m=mark: any(shows(f)[1] >= 10 for f in presented[m:]), timeout=WAIT_MS)
+        start = len(presented)
+        match to:
+            case "play":
+                client.send(p.Play(position=at(f"p{n}"), clip=b))
+                now = client.next()
+                assert isinstance(now, p.NowAt) and now.state == "playing" and now.pts == 0.0
+                assert client.next().state == "held"
+            case "loop":
+                client.send(p.Loop(position=at(f"l{n}"), clip=b))
+                now = client.next()
+                assert isinstance(now, p.NowAt) and now.state == "looping" and now.pts == 0.0
+            case _:
+                client.send(p.Cover(position=p.Before(), clip=b))
+                assert client.next() == p.NowCovered(position=p.Before(), clip=b)
+                after = [shows(f) for f in presented[start:]]
+                assert ("a", 0) not in after[after.index(("b", 0)) :] and shows(view.sink.videoFrame()) == ("b", 0)
+
+
 @pytest.mark.parametrize("again", ["replay", "previous"])
 def test_the_clip_on_screen_can_be_played_again_or_covered(rig, clips, again):
     """Replay (Play the same clip) and Previous to Before (Cover the same clip): Qt's same-source path."""
@@ -328,7 +359,7 @@ def test_keys_pressed_on_the_audience_reach_the_presenter_once(rig, qtbot, qapp)
 
 
 def test_unmapped_keys_pass_through_the_forwarder(rig, qtbot, qapp):
-    """Only the five mapped keys are taken; Cmd+W and the like still reach the window."""
+    """Only the five mapped keys, pressed bare, are taken; Cmd+R and unmapped keys still reach the window."""
     view, client, _ = rig
     forwarder = audience.KeyForwarder(view)
     qapp.installEventFilter(forwarder)
@@ -344,10 +375,11 @@ def test_unmapped_keys_pass_through_the_forwarder(rig, qtbot, qapp):
     view.installEventFilter(recorder)
     try:
         QTest.keyClick(view.windowHandle(), Qt.Key.Key_A)
+        QTest.keyClick(view.windowHandle(), Qt.Key.Key_R, Qt.KeyboardModifier.ControlModifier)  # Cmd+R on macOS
         qtbot.wait(200)
     finally:
         qapp.removeEventFilter(forwarder)
-    assert seen == [Qt.Key.Key_A] and client.got[1:] == []
+    assert [k for k in seen if k != Qt.Key.Key_Control] == [Qt.Key.Key_A, Qt.Key.Key_R] and client.got[1:] == []
 
 
 def test_the_audience_runs_only_the_code_its_hash_covers(tmp_path):

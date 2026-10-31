@@ -8,6 +8,7 @@ import ctypes
 import os
 import sys
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Literal
@@ -23,12 +24,26 @@ from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from manim_presentations import protocol as p
 
+# A key held with these is a shortcut (Cmd+R, Cmd+W), never navigation; Shift and the keypad flag (arrows on macOS)
+# do not count.
+CHORD = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier
 NO_SCREEN_WIDTH = 0.55  # of the screen when there is no second one: rev 14's guess, confirmed or changed in P6 (D4)
 
 Shown = p.Play | p.Loop | p.Cover | p.Hold
-# What the player is awaited to do next for the shown message: present a frame reported as that state, reach
-# LoadedMedia for Hold's seek ("seek"), or reach EndOfMedia after a Play ("end"). Every signal routes on it alone.
-Expect = Literal["playing", "looping", "covered", "seek", "held", "end"] | None
+State = Literal["playing", "looping", "covered", "held"]
+
+
+@dataclass(frozen=True)
+class Loading:
+    """The new clip is not loaded yet: frames that arrive now are the outgoing clip's. At LoadedMedia the next frame
+    becomes reportable as `then` (a Hold seeks to its last frame first)."""
+
+    then: State
+
+
+# What the player is awaited to do next for the shown message; every player signal routes on it alone. A State: the
+# next presented frame is reported as it. "end": a Play's EndOfMedia, which it reports as held.
+Expect = Loading | State | Literal["end"] | None
 
 
 def loaded_media_plugins() -> list[str]:
@@ -126,39 +141,44 @@ class Audience(QWidget):
                 self.load(message, "covered", 1)
                 self.player.pause()  # presents pts 0
             case p.Hold():
-                self.load(message, "seek", 1)
+                self.load(message, "held", 1)
                 self.player.pause()  # a seek before LoadedMedia is discarded (P1)
             case p.Quit():
                 QApplication.quit()
 
-    def load(self, message: Shown, expect: Expect, loops: int) -> None:
-        """setSource emits the outgoing clip's status and frames synchronously; with nothing expected, they do
-        nothing. The new expectation starts once the new source is set."""
+    def load(self, message: Shown, then: State, loops: int) -> None:
+        """setSource emits the outgoing clip's status synchronously, so the mark is set after it returns; the
+        outgoing clip's frames keep arriving until the new clip's LoadedMedia, which `Loading` waits for."""
         self.on_failure, self.shown, self.expect, self.last_valid = self.last_valid, message, None, None
         self.player.setLoops(loops)
         self.player.setSource(QUrl.fromLocalFile(message.clip))
-        self.expect = expect
+        self.expect = Loading(then)
         self._status(self.player.mediaStatus())  # the same clip again: its LoadedMedia came during setSource
 
     # --- what the player actually shows ---
     def _status(self, status: QMediaPlayer.MediaStatus) -> None:
-        if self.expect == "seek" and status == QMediaPlayer.MediaStatus.LoadedMedia:  # always precedes Buffered
-            self.expect = "held"
-            # duration - 1 ms lies inside the last frame; P1 measured it presenting exactly that frame, 5/5
-            self.player.setPosition(self.player.duration() - 1)
-        elif self.expect == "end" and status == QMediaPlayer.MediaStatus.EndOfMedia:
-            assert self.last_valid is not None
-            self.sink.setVideoFrame(self.last_valid)  # an empty frame precedes EndOfMedia: show the last real one
-            self.report("held", self.last_valid)
+        match self.expect, status:  # LoadedMedia always precedes BufferedMedia
+            case Loading(then="held"), QMediaPlayer.MediaStatus.LoadedMedia:
+                self.expect = "held"
+                # duration - 1 ms lies inside the last frame; P1 measured it presenting exactly that frame, 5/5
+                self.player.setPosition(self.player.duration() - 1)
+            case Loading(then=then), QMediaPlayer.MediaStatus.LoadedMedia:
+                self.expect = then
+            case "end", QMediaPlayer.MediaStatus.EndOfMedia:
+                assert self.last_valid is not None
+                self.sink.setVideoFrame(self.last_valid)  # an empty frame precedes EndOfMedia: show the last real one
+                self.report("held", self.last_valid)
+            case _:
+                pass
 
     def _presented(self, frame: QVideoFrame) -> None:
-        if not frame.isValid():
-            return
+        if not frame.isValid() or self.expect is None or isinstance(self.expect, Loading):
+            return  # an empty frame, or the outgoing clip's
         self.last_valid = QVideoFrame(frame)
-        if self.expect in ("playing", "looping", "covered", "held"):
+        if self.expect != "end":
             self.report(self.expect, frame)
 
-    def report(self, state: Literal["playing", "looping", "covered", "held"], frame: QVideoFrame) -> None:
+    def report(self, state: State, frame: QVideoFrame) -> None:
         assert self.shown is not None
         self.expect = "end" if state == "playing" else None  # a Play ends held
         match self.shown, state:
@@ -196,6 +216,8 @@ class KeyForwarder(QObject):
         action = p.KEYS.get(Qt.Key(event.key()).name.removeprefix("Key_"))
         if action is None:
             return False
+        if event.modifiers() & CHORD:
+            return False  # Cmd+R and the like are the window's, not a navigation key
         if not event.isAutoRepeat():  # a held key or a repeating clicker sends one action
             self.audience.send(p.Key(action=action))
         return True
