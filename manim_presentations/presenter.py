@@ -38,6 +38,7 @@ from PySide6.QtGui import (
     QResizeEvent,
     QSyntaxHighlighter,
     QTextCharFormat,
+    QTextOption,
 )
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import (
@@ -341,6 +342,7 @@ class Presenter(QMainWindow):
         column.addWidget(self.next_still, stretch=1)
         self.editor = QTextEdit()
         self.editor.setAcceptRichText(False)
+        self.editor.setWordWrapMode(QTextOption.WrapMode.WordWrap)  # never inside a word
         self.editor.setStyleSheet(f"QTextEdit:focus {{ border: 2px solid {ACCENT}; }}")  # the visible editing state
         self.notes = Notes(self.editor.document())
         self.editor.textChanged.connect(self.save)
@@ -378,9 +380,13 @@ class Presenter(QMainWindow):
         self.setCentralWidget(body)
         body.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.home = body  # where focus lives when the editor does not have it
-        self.flash_base = {a: b.styleSheet() for a, b in self.buttons.items()}
-        self.buttons["next"].setStyleSheet(f"background: {ACCENT}; font-size: 20pt;")
-        self.flash_base["next"] = self.buttons["next"].styleSheet()
+        self.flash_base: dict[p.Action, str] = {
+            "previous": "font-size: 16pt;",
+            "next": f"background: {ACCENT}; font-size: 20pt;",
+            "replay": "font-size: 16pt;",
+        }
+        for action, button in self.buttons.items():
+            button.setStyleSheet(self.flash_base[action])
 
     def fill_timeline(self) -> None:
         self.timeline.clear()
@@ -636,7 +642,8 @@ class Presenter(QMainWindow):
             font.setPointSize(size)
             document.setDefaultFont(font)
             document.setTextWidth(viewport.width())
-            return document.size().height() <= viewport.height()
+            # idealWidth: the widest unbreakable run; wider than the viewport would be cut mid-word
+            return document.size().height() <= viewport.height() and document.idealWidth() <= viewport.width()
 
         lo, hi, best = EDITOR_FLOOR_PT, max(EDITOR_FLOOR_PT, viewport.height()), None
         while lo <= hi:
