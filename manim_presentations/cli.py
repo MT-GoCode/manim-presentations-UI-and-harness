@@ -57,6 +57,32 @@ def run_shots(root: Path, args: argparse.Namespace) -> int:
         return 1
 
 
+def even(text: str) -> int:
+    n = positive(text)
+    if n % 2:
+        raise argparse.ArgumentTypeError(f"{n}: H.264 yuv420p needs an even height")
+    return n
+
+
+def crf(text: str) -> int:
+    n = int(text)
+    if not 0 <= n <= 51:
+        raise argparse.ArgumentTypeError(f"{n}: x264 takes 0-51")
+    return n
+
+
+def run_export(root: Path, args: argparse.Namespace) -> int:
+    from manim_presentations.deck import IncompatibleBuild, Stale
+    from manim_presentations.export import ExportError, export
+    from manim_presentations.headroom import TooBig
+
+    try:
+        return export(root, Path(args.out).expanduser().resolve(), args.height, args.crf, args.workers)
+    except (IncompatibleBuild, Stale, ExportError, TooBig) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mpres", description="Build, present, screenshot and export Manim talks.")
     sub = p.add_subparsers(dest="command", metavar="command")
@@ -70,6 +96,15 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--out", metavar="DIR", help="output folder (default: /tmp/mpres-shots/<talk>-<hash>/)")
     s.add_argument("--workers", type=positive, metavar="N", help=workers)
     s.set_defaults(run=run_shots)
+    e = sub.add_parser("export", help="the talk as one self-contained HTML file that plays offline")
+    e.add_argument("talk", help="path to a <name>.manim-presentation folder")
+    e.add_argument("--out", required=True, metavar="FILE.html", help="where to write the page")
+    e.add_argument("--height", type=even, metavar="H", help="video height (default: min(1080, the source height))")
+    e.add_argument(
+        "--crf", type=crf, metavar="C", help="x264 quality, 0-51, lower is better (default: measured, printed)"
+    )
+    e.add_argument("--workers", type=positive, metavar="N", help=workers)
+    e.set_defaults(run=run_export)
     return p
 
 

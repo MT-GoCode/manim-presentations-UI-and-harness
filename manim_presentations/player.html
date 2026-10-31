@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>mpres export</title>
+<style>body{margin:0;background:#000}#stage{position:fixed;inset:0}video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}</style>
+</head><body><div id="stage"></div>
+<!--manifest-->
+<script>
+const M = JSON.parse(document.getElementById('manifest').textContent);
+document.title = M.title;
+const b = atob(document.getElementById('clip-0').textContent), u = new Uint8Array(b.length);
+for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+const v = document.createElement('video');
+v.muted = true; v.playsInline = true; v.src = URL.createObjectURL(new Blob([u], {type: 'video/mp4'}));
+document.getElementById('stage').appendChild(v);
+</script></body></html>
