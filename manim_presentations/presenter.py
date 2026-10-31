@@ -203,12 +203,17 @@ class Link(QObject):
         self.buffer += bytes(self.socket.readAll().data())
         *lines, self.buffer = self.buffer.split(b"\n")
         for line in lines:
-            if self.told in ("quit", "replace"):
+            if self.told in ("quit", "replace") or isinstance(self.told, FatalSaid):
                 return  # after our own Quit nothing this connection says changes why it ends (Quit sends Closed)
             raw = json.loads(line)
             if raw["type"] == "hello" and raw["protocol"] != p.AUDIENCE_CODE:
-                # Decoded by that one field: an Audience of other code may not speak this union at all.
-                self.told = "replace"
+                # Decoded by that one field: an Audience of other code may not speak this union at all. One this
+                # Presenter launched means the engine on disk changed under it: every relaunch would differ again.
+                self.told = (
+                    "replace"
+                    if self.pid is None
+                    else FatalSaid("the engine changed on disk since present started; restart mpres present")
+                )
                 self.send(p.Quit())
                 return
             message = p.to_presenter(line)
@@ -317,7 +322,7 @@ class Presenter(QMainWindow):
         self.lock_fd = -1  # the presenter lock, set by open_presenter
         self.link = Link(self.root, self.title_text, self.received, self.audience_trouble, self.audience_lost)
         self.opened.connect(self.hot_swap)
-        self.open_failed.connect(lambda e: self.set_red("rebuild", f"the new build could not be read: {e}"))
+        self.open_failed.connect(self.open_failed_with)
         self._build_ui()
         # The talk folder alone: macOS's FSEvents backend reports in-place rewrites and atomic replaces of its files
         # alike (measured), and a folder watch survives the replace that drops a file watch.
@@ -529,8 +534,8 @@ class Presenter(QMainWindow):
         def run() -> None:
             try:
                 self.opened.emit(open_deck(self.root))
-            except (d.IncompatibleBuild, ValueError, OSError) as e:
-                self.open_failed.emit(str(e))
+            except Exception as e:  # any failure is shown; a thread's exception would otherwise vanish
+                self.open_failed.emit(f"{type(e).__name__}: {e}")
 
         self.opening = True
         threading.Thread(target=run, daemon=True).start()
@@ -563,9 +568,10 @@ class Presenter(QMainWindow):
         self.show_position()
         self.build_changed("")  # a build committed while this one was opening
 
-    def set_red(self, source: str, text: str) -> None:
+    def open_failed_with(self, error: str) -> None:
+        """The new build's deck could not be opened: say so, and let the next build try again."""
         self.opening = False
-        self.red[source] = text
+        self.red["rebuild"] = f"the new build could not be read: {error}"
         self.refresh_status()
 
     def audience_lost(self) -> None:
@@ -758,31 +764,33 @@ def route_signals(intent: Callable[[], None]) -> list[object]:
     return [watch]
 
 
+def report_errors(window: Presenter) -> None:
+    """Qt prints a slot's exception and carries on: show it red rather than lose the Presenter mid-talk."""
+
+    def failed(kind: type[BaseException], error: BaseException, trace: TracebackType | None) -> None:
+        traceback.print_exception(kind, error, trace)
+        window.red["error"] = f"{kind.__name__}: {error}"
+        window.refresh_status()
+
+    sys.excepthook = failed
+
+
 def present(root: Path, start: str | None) -> int:
     app = QApplication([])
     windows: list[Presenter] = []
-    early: list[bool] = []  # an intent signal during startup, acted on once the window (and its Link) exists
+    stop: list[bool] = []  # an intent signal; acted on in the event loop, once the window (and its Link) exists
 
     def intent() -> None:
+        stop.append(True)
         if windows:
-            windows[0].close()
-        else:
-            early.append(True)
+            QTimer.singleShot(0, windows[0].close)  # in the loop: closing there also ends it
 
     kept = route_signals(intent)
-
-    def failed(kind: type[BaseException], error: BaseException, trace: TracebackType | None) -> None:
-        """Qt prints a slot's exception and carries on: show it red rather than lose the Presenter mid-talk."""
-        traceback.print_exception(kind, error, trace)
-        if windows:
-            windows[0].red["error"] = f"{kind.__name__}: {error}"
-            windows[0].refresh_status()
-
-    sys.excepthook = failed
+    print(f"present: opening {root}", flush=True)  # signals are routed from here on
     windows.append(open_presenter(root, start))
-    if early:
-        windows[0].close()
-        return 0
+    report_errors(windows[0])
+    if stop:
+        QTimer.singleShot(0, windows[0].close)
     code = app.exec()
     del kept
     return code

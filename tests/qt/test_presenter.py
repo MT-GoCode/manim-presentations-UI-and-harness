@@ -502,3 +502,30 @@ def test_a_presenter_lock_held_briefly_is_waited_for(talk, open_):
     fd = Layout(talk).presenter_lock()
     threading.Timer(0.2, os.close, [fd]).start()
     open_(talk)
+
+
+def test_an_audience_it_launched_with_other_code_is_not_relaunched(talk, open_, qtbot, launches, monkeypatch, tmp_path):
+    """The engine changed on disk under a running Presenter: every relaunch would differ again, so it stops red."""
+    pkg = tmp_path / "engine" / "manim_presentations"
+    shutil.copytree(REPO / "manim_presentations", pkg, ignore=shutil.ignore_patterns("__pycache__"))
+    (pkg / "audience.py").write_text((pkg / "audience.py").read_text() + "\n# another version\n")
+    monkeypatch.setenv("PYTHONPATH", str(pkg.parent))  # what the launched Audience imports
+    window = open_(talk)
+    qtbot.waitUntil(lambda: "restart mpres present" in window.status.text(), timeout=LAUNCH_MS)
+    pid = window.link.pid
+    assert pid is not None
+    deadline = time.monotonic() + LAUNCH_MS / 1000
+    while os.waitpid(pid, os.WNOHANG)[0] != pid:  # it quit
+        assert time.monotonic() < deadline, "the Audience did not quit"
+        time.sleep(0.05)
+    window.link.pid = None
+    qtbot.wait(QUIET_MS)
+    assert launches == [1] and red(window)
+
+
+def test_an_exception_in_a_slot_is_shown_red(talk, open_, monkeypatch):
+    window = open_(talk)
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)  # restored after the test
+    presenter.report_errors(window)
+    sys.excepthook(KeyError, KeyError("no such beat"), None)
+    assert red(window) and "KeyError: 'no such beat'" in window.status.text()

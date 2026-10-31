@@ -1,6 +1,7 @@
 """Presenting live: the real Presenter and the real Audience through a whole talk, rebuilds adopted while presenting,
 one Presenter per talk, and closing by cause through `bin/mpres`, the path an agent uses."""
 
+import fcntl
 import os
 import shutil
 import signal
@@ -179,6 +180,10 @@ def test_a_rebuild_without_the_current_beat_moves_back_and_says_so(talk, open_, 
     assert window.position == p.At(slug="title-card")
     assert "beat the-idea was removed by the rebuild; now at title-card" in window.status.text()
     qtbot.waitUntil(now_is(window, p.At(slug="title-card"), "held"), timeout=WAIT_MS)  # and the Audience shows it
+    again = rebuilt(lambda r: edit(r / "chapters" / "working.py", "Circle(1.0", "Circle(1.1"), "again")
+    commit_from(talk, again)
+    settled(qtbot, window, talk)
+    assert "was removed" not in window.status.text()  # only the next build clears it
 
 
 def test_a_build_committed_while_the_last_one_opens_is_adopted(talk, open_, qtbot, rebuilt, monkeypatch):
@@ -210,6 +215,27 @@ def test_a_build_committed_while_the_last_one_opens_is_adopted(talk, open_, qtbo
     qtbot.wait(QUIET_MS)  # C's folder event lands while B is opening
     release.set()
     settled(qtbot, window, talk)
+    assert window.deck.build_id == Layout(c).build_id()
+
+
+def test_a_build_that_cannot_be_opened_is_red_and_the_next_one_is_adopted(talk, open_, qtbot, rebuilt, monkeypatch):
+    b = rebuilt(lambda r: edit(r / "chapters" / "working.py", "Circle(1.0", "Circle(1.1"), "b")
+    c = rebuilt(lambda r: edit(r / "chapters" / "working.py", "Circle(1.0", "Circle(1.2"), "c")
+    window = open_(talk)
+    qtbot.waitUntil(now_is(window, p.Before()), timeout=LAUNCH_MS)
+    failures = [KeyError("index")]
+    open_deck = presenter.open_deck
+
+    def once(root):
+        if failures:
+            raise failures.pop()
+        return open_deck(root)
+
+    monkeypatch.setattr(presenter, "open_deck", once)
+    commit_from(talk, b)
+    qtbot.waitUntil(lambda: "the new build could not be read: KeyError" in window.status.text(), timeout=WAIT_MS)
+    commit_from(talk, c)
+    settled(qtbot, window, talk)  # hot-swap still works after a failed open
     assert window.deck.build_id == Layout(c).build_id()
 
 
@@ -364,3 +390,34 @@ def test_a_second_present_exits_3_even_after_a_pin_rewrite(talk, presented):
     r = mpres("present", str(talk))
     assert r.returncode == 3 and "already being presented" in r.stderr
     assert Deck.open(talk).build_id == Layout(talk).build_id()
+
+
+def test_a_sigterm_during_startup_closes_everything(talk):
+    """Startup held at its deck read (the test holds the build's clips lock), then SIGTERM: the Presenter comes up only
+    to close, and leaves no Audience."""
+    lock = os.open(Layout(talk).build / ".clips.lock", os.O_RDWR | os.O_CREAT)
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen"}
+    proc = subprocess.Popen(
+        [str(REPO / "bin" / "mpres"), "present", str(talk)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+    )
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            if line.startswith("present: opening"):
+                break
+        proc.send_signal(signal.SIGTERM)
+        time.sleep(QUIET_MS / 1000)  # the signal lands while the deck read is blocked
+    finally:
+        os.close(lock)  # startup continues
+    try:
+        assert proc.wait(LAUNCH_MS / 1000) == 0  # up only to close: a Presenter that stays up fails here, not hangs
+    finally:
+        proc.kill()
+        for pid in audiences(talk):
+            os.kill(pid, signal.SIGKILL)
+    wait(lambda: audiences(talk) == [], WAIT_MS)
