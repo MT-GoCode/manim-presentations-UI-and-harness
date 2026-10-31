@@ -63,7 +63,13 @@ class LoopBeat(_Beat):
     s_end: str
 
 
-BeatRecord = Annotated[PlainBeat | LoopBeat, Field(discriminator="kind")]
+class EmptyLoop(_Beat):
+    """A loop with no play: it has no first frame, so no rasters. The build's empty-beat check always fails it."""
+
+    kind: Literal["empty-loop"] = "empty-loop"
+
+
+BeatRecord = Annotated[PlainBeat | LoopBeat | EmptyLoop, Field(discriminator="kind")]
 
 
 class ChapterRecord(_Frozen):

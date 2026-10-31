@@ -167,9 +167,16 @@ def sized(m: Mobject) -> bool:
     return any(c.__name__ in SIZED for c in type(m).__mro__)
 
 
-def size_ref(m: Mobject) -> tuple[float, float]:
+class Mismatch:
+    """A node's size reference after a Transform or become between unequal numbers of text objects: unknown."""
+
+
+Ref = tuple[float, float] | Mismatch
+
+
+def size_ref(m: Mobject) -> Ref:
     """(reference height, the font size at that height). Manim's own: (initial_height, font_size · initial_height /
-    height), the size it was created at; or the shadow a Transform or become left on it."""
+    height), the size it was created at; or what the latest Transform or become left on it."""
     for ref in (getattr(m, "_mpres_ref", None), getattr(m, "_mpres_paragraph_ref", None)):
         if ref is not None:
             return ref
@@ -177,10 +184,16 @@ def size_ref(m: Mobject) -> tuple[float, float]:
     return initial, size * initial / m.height
 
 
+def mismatched(m: Mobject) -> bool:
+    return isinstance(getattr(m, "_mpres_ref", None), Mismatch)  # isinstance: Mobject.copy deep-copies the marker
+
+
 def font_size(m: Mobject) -> float:
     """The declared size now: the reference size scaled by how much the mobject grew since (later scale() calls stay
     reflected)."""
-    height, size = size_ref(m)
+    ref = size_ref(m)
+    assert not isinstance(ref, Mismatch), "a mismatched node has no declared size"
+    height, size = ref
     return size * m.height / height
 
 
@@ -188,7 +201,8 @@ def install_size_references() -> None:
     """Pass 1 only. Record Paragraph's reference at creation; after a Transform, whose source ends holding the
     target's points (Transform, .animate, ClockwiseTransform, CyclicReplace, ApplyFunction, ReplacementTransform), and
     after become, give each size-checked node of the source the matching target node's reference, paired by family
-    index. A count mismatch is marked for the check to report."""
+    index. A count mismatch marks every node of the source (a Square ending with a Text's glyphs is not size-checked)
+    for the check to report."""
     from manim import Paragraph, Transform
 
     paragraph_init = Paragraph.__init__
@@ -198,15 +212,15 @@ def install_size_references() -> None:
         setattr(self, "_mpres_paragraph_ref", (self.height, self.lines_text.font_size))
 
     def take(source: Mobject, target: Mobject) -> None:
-        mine = [x for x in source.get_family() if sized(x)]
-        theirs = [x for x in target.get_family() if sized(x)]
-        if len(mine) != len(theirs):  # marked on the text nodes: a plain group is opened, so its own mark is lost
-            for x in mine:
-                setattr(x, "_mpres_size_mismatch", True)
-            return
-        refs = [size_ref(t) for t in theirs]  # read before writing: source and target may share nodes
-        for x, ref in zip(mine, refs, strict=True):
-            setattr(x, "_mpres_ref", ref)
+        family = source.get_family()
+        mine = [x for x in family if sized(x)]
+        theirs = [size_ref(t) for t in target.get_family() if sized(t)]  # read first: source and target may share
+        matched = len(mine) == len(theirs)
+        refs = dict(zip(map(id, mine), theirs, strict=True)) if matched else {}
+        # Every node's one fact is rewritten, so the latest take wins. On a mismatch a shape is marked too: it may now
+        # hold a Text's glyphs.
+        for x in family:
+            setattr(x, "_mpres_ref", refs.get(id(x)) if matched else Mismatch())
 
     clean_up = Transform.clean_up_from_scene
 

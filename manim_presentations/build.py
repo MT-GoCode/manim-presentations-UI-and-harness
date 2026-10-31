@@ -38,7 +38,7 @@ from manim_presentations.deck import (
     new_build_id,
 )
 from manim_presentations.geometry import Finding
-from manim_presentations.records import CHAPTER_RECORD, BeatRecord, ChapterRecord, LoopBeat, PlainBeat
+from manim_presentations.records import CHAPTER_RECORD, BeatRecord, ChapterRecord, EmptyLoop, LoopBeat, PlainBeat
 from manim_presentations.script import Script
 from manim_presentations.script import load as load_script
 from manim_presentations.settings import Settings, SettingsError
@@ -321,7 +321,7 @@ def loop_closure(out: Path, record: ChapterRecord) -> list[Finding]:
                             "began, or make it talk.beat()",
                         )
                     )
-            case PlainBeat():
+            case PlainBeat() | EmptyLoop():
                 pass
     return findings
 
@@ -470,6 +470,7 @@ def build(talk: Path, workers: int | None) -> int:
 
     def finish(rb: tuple[ChapterRecord, BeatRecord]) -> IndexBeat:
         r, b = rb
+        assert not isinstance(b, EmptyLoop), "the empty-beat check fails every empty loop"
         fp = prints[(r.chapter, b.slug)]
         if (r.chapter, b.slug) in reused:
             sha = old_beats[fp].clip

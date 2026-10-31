@@ -401,7 +401,34 @@ def test_text_transformed_into_a_non_text_slot_is_marked(size_hooks):
         return two
 
     a, b = played(run)
-    assert getattr(a, "_mpres_size_mismatch", False) and getattr(b, "_mpres_size_mismatch", False)
+    assert manim_hooks.mismatched(a) and manim_hooks.mismatched(b)
+
+
+def test_a_later_matching_transform_clears_a_mismatch(size_hooks):
+    from manim import Text, Transform, VGroup
+
+    def run(s):
+        g = VGroup(Text("a", font_size=40), Text("b", font_size=40))
+        s.add(g)
+        s.play(Transform(g, VGroup(Text("c", font_size=40), Square(0.3))))
+        s.play(Transform(g, VGroup(Text("d", font_size=36), Text("e", font_size=44))))
+        return g
+
+    g = played(run)
+    assert not any(manim_hooks.mismatched(x) for x in g.get_family())
+    assert [manim_hooks.font_size(x) for x in g] == [pytest.approx(36), pytest.approx(44)]
+
+
+def test_a_shape_transformed_into_text_is_marked(size_hooks):
+    from manim import Text, Transform
+
+    def run(s):
+        sq = Square(0.5)
+        s.add(sq)
+        s.play(Transform(sq, Text("tiny", font_size=8)))
+        return sq
+
+    assert manim_hooks.mismatched(played(run))
 
 
 def test_a_replaced_source_shown_again_is_sized_as_the_target_it_became(size_hooks):

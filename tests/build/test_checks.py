@@ -40,7 +40,7 @@ def test_edge_and_hello_build_clean(talk):
         ("mismatch", r'error: script\.md:\d+ has "## named-as" but chapters/mismatch\.py has no talk\.beat/loop'),
         ("early-play", r"error: chapters/early-play\.py:5: play or wait before the chapter's first talk\.beat"),
         ("empty-beat", r'error: chapters/empty-beat\.py:5 beat "only-adds" has no animation'),
-        ("empty-loop", r'error: chapters/empty-loop\.py:5 loop "idle" has no animation; give it one'),
+        ("empty-loop", r'error: chapters/empty-loop\.py:5 beat "idle" has no animation; give it one'),
         ("unnamed", r"error: chapters/stray\.py is not named by any `# stray` in script\.md"),
         ("reads-outside", r"error: chapters/reads-outside\.py read /private/tmp/x, outside the talk folder"),
         # the talk's fourth chapter: a beat's index for transient marks is its index in its own chapter
@@ -92,6 +92,11 @@ def test_edge_and_hello_build_clean(talk):
             r"unequal numbers of text objects; use ReplacementTransform\(a, b\)",
         ),
         (
+            "shape-to-text",
+            r"error: sprouts · chapters/shape-to-text\.py:6 · Square at \(.+\) was transformed between groups of "
+            r"unequal numbers of text objects",
+        ),
+        (
             "unclosed",
             r'error: chapters/unclosed\.py:5 loop "drifts" does not close: its end state differs from its first frame in \d+ pixels',
         ),
@@ -104,10 +109,18 @@ def test_each_authoring_error_is_named_at_its_line(talk, overlay, expected):
     assert "Traceback" not in r.stderr
 
 
-@pytest.mark.parametrize("overlay,counts", [("overlap", "overlap 1"), ("size-mismatch", "size-mismatch 1")])
+@pytest.mark.parametrize(
+    "overlay,counts",
+    [("overlap", "overlap 1"), ("size-mismatch", "size-mismatch 2"), ("empty-loop", "empty-beat 1")],
+)
 def test_failure_counts_per_kind(talk, overlay, counts):
     r = build(talk("edge", overlay))
     assert r.stderr.splitlines()[-1] == f"checks failed: {counts}"
+
+
+def test_a_later_matching_transform_clears_a_size_mismatch(talk):
+    r = build(talk("edge", "remorph"))
+    assert r.returncode == 0, r.stdout + r.stderr
 
 
 def test_a_bad_slug_in_script_md_is_one_line_not_a_traceback(talk):

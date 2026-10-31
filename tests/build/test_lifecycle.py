@@ -1,14 +1,17 @@
-"""The build's guards across processes and builds: pins, a killed render's leftovers, edits during a build, worker
-hygiene, the width seeds, one beat cut into chunks, and what scene processes may import from."""
+"""The build's guards across processes and builds: pins, a killed build's leftovers, a killed render, edits during a
+build, worker hygiene, the width seeds, one beat cut into chunks, and what scene processes may import from."""
 
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
+import psutil
 from conftest import REPO, SUBPROCESS_TIMEOUT, TEST_WORKERS, TEST_WORKERS_WIDE, render_peak
 
 from manim_presentations.deck import Layout
@@ -90,6 +93,35 @@ def test_a_killed_builds_leftovers_are_wiped(talk):
     ghost.parent.mkdir(parents=True)
     ghost.write_text("def construct(talk):\n    talk.beat('boo')\n")
     assert rendered(ok(build(root))) == []
+
+
+def test_a_killed_render_leaves_the_previous_build_whole(talk):
+    """SIGKILL to the parent while its render workers run: the index and every clip it names are as before, and the
+    next build renders exactly the edited beat."""
+    root = talk("edge")
+    ok(build(root))
+    before = (root / "build" / "index.json").read_bytes()
+    clips = {b["clip"]: clip_of(root, b["slug"]).read_bytes() for b in index(root)["beats"]}
+    edit(root / "chapters" / "text.py", 'Text("Edge"', 'Text("Edged"')
+    cmd = [sys.executable, "-P", "-m", "manim_presentations.cli", "build", str(root), "--workers", str(TEST_WORKERS)]
+    parent = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
+    assert parent.stdout is not None
+    for line in parent.stdout:  # the build's own phase line: render workers are spawned right after it
+        if line.startswith("render width"):
+            break
+    else:
+        raise AssertionError(f"the build ended before its render phase (exit {parent.wait()})")
+    proc = psutil.Process(parent.pid)
+    while not (workers := proc.children()):
+        assert parent.poll() is None, "the build ended before a render worker started"
+        time.sleep(0.01)
+    parent.send_signal(signal.SIGKILL)
+    parent.wait()
+    psutil.wait_procs(workers)  # they exit on their own once they see the dead parent; the lock is then free
+    assert (root / "build" / "index.json").read_bytes() == before
+    for sha, data in clips.items():
+        assert (root / "build" / "clips" / f"{sha}.mp4").read_bytes() == data
+    assert rendered(ok(build(root))) == ["words"]
 
 
 def test_an_edit_during_a_build_does_not_reach_its_clips(talk, tmp_path):

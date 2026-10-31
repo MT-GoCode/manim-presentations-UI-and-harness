@@ -35,7 +35,9 @@ PASS1_RSS_TEST = 138 * MiB  # the edge fixture's largest pass1_rss at 480×270 (
 def build_cost() -> tuple[float, int]:
     """PLAN §3.11: the parent plus TEST_WORKERS_WIDE render workers, each its chapter's pass-1 peak plus the worker
     overhead at the test size (the render phase outweighs pass 1's TEST_WORKERS_WIDE children). 5.2 cores, 1073 MiB;
-    the sampled tree peak of an edge build at --workers 4 was 4.37 cores, 803 MiB (mac-personal)."""
+    the sampled tree peak of an edge build at --workers 4 was 4.37 cores, 803 MiB (mac-personal). Two tests build
+    with no --workers, to test the default width: they may exceed their slot, but that width is sized from the idle
+    cores and free RAM sampled at their start, so they shrink to the load the other slots put on the machine."""
     from manim_presentations import build
 
     worker_ram = PASS1_RSS_TEST + build.worker_overhead(480 * 270 / 1e6)
