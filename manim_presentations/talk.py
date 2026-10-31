@@ -4,7 +4,9 @@
 chapter, in the build. Pass 1 runs `Pass1Talk`, which also records what is on screen at each beat's end."""
 
 import importlib.util
+import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,21 @@ SAMPLES_PER_CURVE = 8  # chords per cubic: a 45Â° arc in 8 chords strays 0.0012Â
 #                        up to r = 3 (vendored from Explainers' lesson.py)
 _T = np.linspace(0, 1, SAMPLES_PER_CURVE + 1)
 _BERNSTEIN = np.stack([(1 - _T) ** 3, 3 * (1 - _T) ** 2 * _T, 3 * (1 - _T) * _T**2, _T**3], axis=1)
+
+
+def watch_parent() -> None:
+    """A killed build never leaves a scene process writing into build/.media (vendored from Explainers' render.py).
+    The parent's pid comes from the parent itself: a child that started after its parent died would otherwise read
+    launchd's pid as its parent and never notice."""
+    parent = int(os.environ["MPRES_BUILD_PID"])
+
+    def watch() -> None:
+        while True:
+            threading.Event().wait(1)
+            if os.getppid() != parent:
+                os._exit(1)
+
+    threading.Thread(target=watch, daemon=True).start()
 
 
 class TalkError(Exception):

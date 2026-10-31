@@ -11,6 +11,7 @@ import os
 import shutil
 import signal
 import sys
+import threading
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -438,14 +439,29 @@ def build(talk: Path, workers: int | None) -> int:
     }
     to_render = {c: plays for c, plays in to_render.items() if plays}
     megapixels = settings.pixel_width * settings.pixel_height / 1e6
-    reports = render(layout, script, settings, records, to_render, megapixels, workers, pass1_done, shared, env)
+    reports, render_width = render(
+        layout, script, settings, records, to_render, megapixels, workers, pass1_done, shared, env
+    )
 
     # Join, stream check and stills, per beat, in parallel.
     t3 = time.monotonic()
     layout.clips.mkdir(exist_ok=True)
     titles = {b.slug: b.title for c in script.chapters for b in c.beats}
     beats_in_order = [(r, b) for r in records for b in r.beats]
-    join_width = width_for("join", workers, len(beats_in_order), DECODE_CORES, decode_ram(megapixels))
+    # Joins and still extraction run across the render width; with nothing rendered, only missing stills need a pool.
+    missing_stills = sum(
+        1
+        for r, b in beats_in_order
+        if (r.chapter, b.slug) in reused
+        for which in ("first", "last")
+        if not layout.still(old_beats[prints[(r.chapter, b.slug)]].clip, STILLS_HASH, which).exists()
+    )
+    if render_width is not None:
+        join_width = render_width
+    elif missing_stills:
+        join_width = width_for("stills", workers, missing_stills, DECODE_CORES, decode_ram(megapixels))
+    else:
+        join_width = 1  # nothing to join or extract: no pool, no sample
 
     def finish(rb: tuple[ChapterRecord, BeatRecord]) -> IndexBeat:
         r, b = rb
@@ -536,14 +552,14 @@ def render(
     pass1_done: dict[str, Done],
     shared: Path,
     env: dict[str, str],
-) -> dict[tuple[str, int], str]:
+) -> tuple[dict[tuple[str, int], str], int | None]:
     """Render the to-render plays in chunks on niced workers, and verify every rendered animation's digest against
     pass 1's. Returns {(chapter, play index): its verified partial file}."""
     t2 = time.monotonic()
     n_plays = sum(len(p) for p in to_render.values())
     if not to_render:
         say(f"render: 0 beats · {sum(len(r.beats) for r in records)} reused")
-        return {}
+        return {}, None
     chunks = schedule.chunks(to_render, megapixels)
     titles = {c.slug: c.title or c.slug for c in script.chapters}
     worker_ram = max(pass1_done[f"pass1-{c}"].rss for c in to_render) + worker_overhead(megapixels)
@@ -570,10 +586,29 @@ def render(
             )
         )
 
-    def progress(done: int, total: int) -> None:
-        say(f"render: {done}/{total} chunks · {n_plays} animations · {width} workers · {time.monotonic() - t2:.0f}s")
+    chunks_done = [0]
+    stop = threading.Event()
 
-    done, peak = run_all(jobs, width, env, layout, "render", progress)
+    def tail() -> None:
+        """Every second, the animations the workers have reported so far (one line each in their stdout files),
+        printed as one progress line when the count moves."""
+        last = -1
+        while not stop.wait(1.0):
+            n = sum(len(f.read_text().splitlines()) for j in jobs if (f := layout.process(j.name) / "stdout").exists())
+            if n != last:
+                last = n
+                say(
+                    f"render: {n}/{n_plays} animations · {chunks_done[0]}/{len(jobs)} chunks · {width} workers · "
+                    f"{time.monotonic() - t2:.0f}s"
+                )
+
+    reader = threading.Thread(target=tail, daemon=True)
+    reader.start()
+    try:
+        done, peak = run_all(jobs, width, env, layout, "render", lambda d, _: chunks_done.__setitem__(0, d))
+    finally:
+        stop.set()
+        reader.join()
     expected = {
         (r.chapter, b.first_anim + j): (r.file, b, d)
         for r in records
@@ -602,7 +637,7 @@ def render(
         f"{width} workers · {worker_ram / 2**30:.2f} GB/worker est, {max_rss / 2**30:.2f} GB peak · digests verified · "
         f"{time.monotonic() - t2:.2f}s"
     )
-    return reports
+    return reports, width
 
 
 def table(script: Script, records: list[ChapterRecord], reused: set[tuple[str, str]]) -> None:

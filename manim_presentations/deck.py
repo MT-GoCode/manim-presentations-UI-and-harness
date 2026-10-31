@@ -214,8 +214,9 @@ class Layout:
         fd = os.open(path, os.O_RDWR)
         try:
             fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return set(json.loads((self.build / ".presenter.json").read_text()))
+        except BlockingIOError:  # a live Presenter; before its first adopt it has written no pins, and pins none
+            pins = self.build / ".presenter.json"
+            return set(json.loads(pins.read_text())) if pins.exists() else set()
         finally:
             os.close(fd)
         return set()

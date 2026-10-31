@@ -86,7 +86,7 @@ forbidden_modules = ["manim_presentations.script", "manim_presentations.settings
 [[tool.importlinter.contracts]]
 name = "the scene side never imports the deck, the script parser or the wire"
 type = "forbidden"
-source_modules = ["manim_presentations.talk", "manim_presentations.pass1"]
+source_modules = ["manim_presentations.talk", "manim_presentations.pass1", "manim_presentations.worker"]
 forbidden_modules = ["manim_presentations.deck", "manim_presentations.script", "manim_presentations.protocol", "manim_presentations.build", "manim_presentations.cli"]
 
 [[tool.importlinter.contracts]]

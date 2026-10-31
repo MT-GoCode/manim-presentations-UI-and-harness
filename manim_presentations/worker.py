@@ -18,9 +18,6 @@ from pathlib import Path
 def main(argv: list[str]) -> int:
     snapshot, slug, title, settings_json, cache, out, first, last = argv
     snapshot_path, cache_path, out_path = Path(snapshot), Path(cache), Path(out)
-    from manim_presentations.pass1 import watch_parent
-
-    watch_parent()
     os.nice(10)
     import manim  # noqa: F401  — Manim's own bytecode is still used; ours is never written
 
@@ -29,7 +26,9 @@ def main(argv: list[str]) -> int:
 
     from manim_presentations import clip, manim_hooks
     from manim_presentations.settings import Settings
-    from manim_presentations.talk import Talk
+    from manim_presentations.talk import Talk, watch_parent
+
+    watch_parent()
 
     settings = Settings.from_argv(settings_json)
     clip.render_config(settings)
@@ -44,6 +43,15 @@ def main(argv: list[str]) -> int:
     config.update(merged)
     scene = Talk(snapshot_path / "chapters" / f"{slug}.py", snapshot_path, title, clip.TeeContext)
     manim_hooks.exact_fast_forward(scene)
+    play = scene.play
+
+    def reporting(*a: object, **k: object) -> None:  # one line per rendered animation: the parent's progress line
+        n = manim_hooks.play_index(scene)
+        play(*a, **k)
+        if n >= int(first):
+            print(f"animation {n}", flush=True)
+
+    scene.play = reporting
     scene.render()
     clip.check_render_config(settings)  # nothing outside clip.py changed what frames are drawn with
     partials = manim_hooks.partial_files(scene)

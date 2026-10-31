@@ -13,7 +13,7 @@ case "${1:-}" in
   --dev) DEV=1 ;;
   *) echo "setup: unknown argument $1 (usage: ./setup.sh [--dev])" >&2; exit 2 ;;
 esac
-N=6
+N=7
 phase() { echo "phase $1/$N: $2"; }
 
 phase 1 "Homebrew"
@@ -81,4 +81,10 @@ esac
 
 phase 6 "check"
 "$LINK" --help >/dev/null
+
+phase 7 "example build"  # in a temporary folder, so no build/ appears in the repo
+EXAMPLE=$(mktemp -d)/hello.manim-presentation
+cp -R "$REPO/examples/hello.manim-presentation" "$EXAMPLE"
+"$LINK" build "$EXAMPLE" | tail -1
+rm -rf "$(dirname "$EXAMPLE")"
 echo "setup OK: mpres -> $REPO/bin/mpres; TeX at $(cat .tinytex/bin-path)"

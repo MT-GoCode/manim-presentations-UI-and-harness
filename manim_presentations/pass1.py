@@ -12,7 +12,6 @@ if __name__ == "__main__":
     os.chdir(sys.argv[1])
 
 import tempfile
-import threading
 from os.path import realpath
 from pathlib import Path
 from typing import Any
@@ -20,21 +19,6 @@ from typing import Any
 READ_EVENTS = frozenset({"open", "os.listdir", "os.scandir", "glob.glob"})
 SYSTEM_ROOTS = ("/System", "/usr", "/Library", "/opt/homebrew", "/dev/null")
 EXCLUSIVE_CREATE = os.O_CREAT | os.O_EXCL
-
-
-def watch_parent() -> None:
-    """A killed build never leaves a scene process writing into build/.media (vendored from Explainers' render.py).
-    The parent's pid comes from the parent itself: a child that started after its parent died would otherwise read
-    launchd's pid as its parent and never notice."""
-    parent = int(os.environ["MPRES_BUILD_PID"])
-
-    def watch() -> None:
-        while True:
-            threading.Event().wait(1)
-            if os.getppid() != parent:
-                os._exit(1)
-
-    threading.Thread(target=watch, daemon=True).start()
 
 
 def cannot_read(flags: int) -> bool:
@@ -85,7 +69,6 @@ class ReadGuard:
 def main(argv: list[str]) -> int:
     snapshot, slug, title, settings_json, cache, tinytex, out = argv
     snapshot_path, cache_path, out_path = Path(snapshot), Path(cache), Path(out)
-    watch_parent()
     os.nice(10)
     import manim  # noqa: F401  — Manim's own bytecode is still used; ours is never written
 
@@ -95,7 +78,9 @@ def main(argv: list[str]) -> int:
     from manim_presentations import clip, manim_hooks
     from manim_presentations.records import CHAPTER_RECORD, ChapterRecord
     from manim_presentations.settings import Settings
-    from manim_presentations.talk import Pass1Talk, TalkError
+    from manim_presentations.talk import Pass1Talk, TalkError, watch_parent
+
+    watch_parent()
 
     chapter = snapshot_path / "chapters" / f"{slug}.py"
     where = chapter.relative_to(snapshot_path)
