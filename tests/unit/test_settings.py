@@ -60,3 +60,18 @@ def test_bad_talk_toml_is_refused(tmp_path, toml):
 def test_argv_round_trip(tmp_path):
     s = load(talk(tmp_path, '[render]\nframe_rate = 24\norigin = "film"\n'))
     assert Settings.from_argv(s.to_argv()) == s
+
+
+def test_units_stay_square_when_frame_width_is_overridden(tmp_path):
+    """Mixing Deluxe's case: 3456×2168 with frame_width 16 must draw a circle round."""
+    from manim import Circle, Scene
+
+    from manim_presentations import clip, manim_hooks
+
+    s = load(talk(tmp_path, '[render]\npixel_width = 3456\npixel_height = 2168\nframe_width = 16\norigin = "x"\n'))
+    clip.render_config(s)
+    cam = Scene().camera
+    c = Circle(radius=2)
+    px = cam.points_to_pixel_coords(c, c.points)
+    assert (px[:, 0].max() - px[:, 0].min()) == pytest.approx(px[:, 1].max() - px[:, 1].min(), rel=1e-3)
+    assert manim_hooks.screen(cam, c, c.points)[:, 0].max() == pytest.approx(2, abs=1e-6)

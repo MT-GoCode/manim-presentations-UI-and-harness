@@ -28,13 +28,20 @@ def talk_root(arg: str) -> Path:
     return root
 
 
+def positive(text: str) -> int:
+    n = int(text)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"{n}: at least 1")
+    return n
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mpres", description="Build, present, screenshot and export Manim talks.")
     sub = p.add_subparsers(dest="command", metavar="command")
     b = sub.add_parser("build", help="check the talk and render what changed")
     b.add_argument("talk", help="path to a <name>.manim-presentation folder")
     b.add_argument(
-        "--workers", type=int, metavar="N", help="run exactly N jobs at once (default: 75%% of free headroom)"
+        "--workers", type=positive, metavar="N", help="run exactly N jobs at once (default: 75%% of free headroom)"
     )
     return p
 

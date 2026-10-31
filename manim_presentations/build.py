@@ -9,11 +9,12 @@ import os
 import shutil
 import signal
 import sys
-import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+
+import psutil
 
 from manim_presentations import geometry, headroom
 from manim_presentations.deck import Busy, Layout
@@ -21,12 +22,13 @@ from manim_presentations.geometry import Finding
 from manim_presentations.records import CHAPTER_RECORD, ChapterRecord
 from manim_presentations.script import Script
 from manim_presentations.script import load as load_script
-from manim_presentations.settings import SettingsError
+from manim_presentations.settings import Settings, SettingsError
 from manim_presentations.settings import load as load_settings
 
-# P0 seeds for the pass-1 width, used until a previous build's index records this talk's own peaks.
-PASS1_CORES = None  # set from P0
-PASS1_RAM = None  # set from P0
+# Seeds for the pass-1 width until a previous build records this talk's own peaks: one synthetic Mixing-Deluxe-scale
+# chapter (6 beats, 63 s of video) at 3456×2168 measured 0.93 cores and 246 MiB peak RSS.
+PASS1_CORES = 0.93
+PASS1_RAM = 246 * 2**20
 
 
 class BuildError(Exception):
@@ -40,7 +42,8 @@ def say(line: str) -> None:
 
 
 def copy_file(src: Path, dst: Path) -> None:
-    """The one copy route, for the snapshot and every private cache copy (P0)."""
+    """The one copy route, for the snapshot and every private cache copy: copy2 measured within noise of clonefile
+    (P0, DECISIONS) and works on every file system."""
     shutil.copy2(src, dst)
 
 
@@ -62,7 +65,6 @@ def cache_id() -> str:
     only, so without this a Pango or TeX upgrade would keep old glyphs forever. manimpango bundles its own Pango and
     cairo; TinyTeX's package database pins every TeX package's revision, dvisvgm included."""
     manimpango = importlib.import_module("manimpango")  # a C extension with no type information
-
     parts = [
         manimpango.__version__,
         manimpango.pango_version(),
@@ -73,12 +75,13 @@ def cache_id() -> str:
 
 
 @dataclass(frozen=True)
-class Child:
+class Job:
     name: str
-    out: Path
+    module: str
+    args: list[str]
 
 
-def spawn(module: str, args: list[str], out: Path, env: dict[str, str]) -> int:
+def spawn(job: Job, out: Path, env: dict[str, str]) -> int:
     """`python -P -m manim_presentations.<module> args…` with stdout/stderr in `out` (pipes would deadlock a parent
     blocked in wait4) and its own process group."""
     out.mkdir(parents=True, exist_ok=True)
@@ -86,29 +89,28 @@ def spawn(module: str, args: list[str], out: Path, env: dict[str, str]) -> int:
         (os.POSIX_SPAWN_OPEN, 1, str(out / "stdout"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
         (os.POSIX_SPAWN_OPEN, 2, str(out / "stderr"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644),
     ]
-    argv = [sys.executable, "-P", "-m", f"manim_presentations.{module}", *args]
+    argv = [sys.executable, "-P", "-m", f"manim_presentations.{job.module}", *job.args]
     return os.posix_spawn(sys.executable, argv, env, file_actions=actions, setsid=True)
 
 
-def run_all(
-    jobs: list[tuple[str, str, list[str]]], width: int, env: dict[str, str], layout: Layout, phase: str
-) -> tuple[dict[str, int], int]:
-    """Run (name, module, args) jobs with at most `width` alive. The first failure kills the rest and raises with its
-    stderr. Returns ({name: peak RSS bytes}, peak number alive)."""
-    pending, alive, rss, peak = list(jobs), dict[int, Child](), dict[str, int](), 0
+def run_all(jobs: list[Job], width: int, env: dict[str, str], layout: Layout, phase: str) -> tuple[dict[str, int], int]:
+    """Run jobs with at most `width` alive. The first failure kills the rest and raises with its whole stderr.
+    Returns ({name: peak RSS bytes}, peak number alive)."""
+    pending, alive, rss, peak = list(jobs), dict[int, Job](), dict[str, int](), 0
     try:
         while pending or alive:
             while pending and len(alive) < width:
-                name, module, args = pending.pop(0)
-                out = layout.process(name)
-                alive[spawn(module, args, out, env)] = Child(name, out)
+                job = pending.pop(0)
+                alive[spawn(job, layout.process(job.name), env)] = job
                 peak = max(peak, len(alive))
             pid, status, usage = os.wait4(-1, 0)
-            child = alive.pop(pid)
-            rss[child.name] = usage.ru_maxrss  # bytes on macOS
+            job = alive.pop(pid)
+            rss[job.name] = usage.ru_maxrss  # bytes on macOS
             if os.waitstatus_to_exitcode(status) != 0:
-                err = (child.out / "stderr").read_text(errors="replace").rstrip().splitlines()
-                raise BuildError(1, [f"{phase} failed in {child.name}:", *err[-40:]])
+                log = layout.process(job.name) / "stderr"
+                raise BuildError(
+                    1, [f"{phase} failed in {job.name} ({log}):", log.read_text(errors="replace").rstrip()]
+                )
     finally:
         for pid in alive:
             # The child leads its own group (setsid), so TeX dies with it. macOS answers EPERM for a group whose
@@ -120,9 +122,30 @@ def run_all(
     return rss, peak
 
 
+def pass1_jobs(layout: Layout, script: Script, settings: Settings, shared: Path) -> list[Job]:
+    """One pass-1 job per chapter, each with a private copy of the warm cache: Manim writes into its cache even on a
+    hit (a fixed-name temp SVG) and checks-then-writes on a miss, so chapters sharing a text would race."""
+    jobs: list[Job] = []
+    for c in script.chapters:
+        name = f"pass1-{c.slug}"
+        private = layout.process(name) / "cache"
+        copy_tree(shared, private)
+        args = [
+            str(layout.snapshot),
+            c.slug,
+            c.title or c.slug,
+            settings.to_argv(),
+            str(private),
+            str(tinytex()),
+            str(layout.process(name)),
+        ]
+        jobs.append(Job(name, "pass1", args))
+    return jobs
+
+
 def pairing(script: Script, records: list[ChapterRecord]) -> list[Finding]:
     """script.md's chapters and beats against the talk.beat()/talk.loop() calls: same slugs, same order, same chapter
-    membership."""
+    membership. Slugs are unique on both sides (script.parse and Talk refuse repeats)."""
     errs: list[Finding] = []
     by_chapter = {r.chapter: r for r in records}
     for c in script.chapters:
@@ -169,49 +192,35 @@ def build(talk: Path, workers: int | None) -> int:
         copy_file(talk / rel, dst)
     say(f"snapshot: {len(files)} files · {time.monotonic() - t0:.2f}s")
 
-    script = load_script(talk / "script.md")
     try:
+        script = load_script(talk / "script.md")
         settings = load_settings(layout.snapshot)
-    except SettingsError as e:
-        raise BuildError(1, [str(e)]) from None
+    except (ValueError, SettingsError) as e:
+        raise BuildError(1, [f"error: {e}"]) from None
     chapters = [c.slug for c in script.chapters]
     on_disk = sorted(p.stem for p in (layout.snapshot / "chapters").glob("*.py"))
-    extra = [
-        Finding("pairing", f"chapters/{s}.py is not named by any `# {s}` in script.md")
-        for s in on_disk
-        if s not in chapters
-    ]
     missing = [
         Finding("pairing", f'script.md:{c.line} names chapter "{c.slug}" but chapters/{c.slug}.py does not exist')
         for c in script.chapters
         if c.slug not in on_disk
     ]
-    if extra or missing:
+    extra = [
+        Finding("pairing", f"chapters/{s}.py is not named by any `# {s}` in script.md")
+        for s in on_disk
+        if s not in chapters
+    ]
+    if missing or extra:
         report([*missing, *extra])
 
     t1 = time.monotonic()
-    cid = cache_id()
-    shared = layout.cache(cid)
+    shared = layout.cache(cache_id())
     shared.mkdir(parents=True, exist_ok=True)
     env = {
         **os.environ,
         "PYTHONHASHSEED": "0",
         "PATH": (tinytex() / "bin-path").read_text().strip() + os.pathsep + os.environ["PATH"],
     }
-    jobs = []
-    for c in script.chapters:
-        private = layout.process(f"pass1-{c.slug}") / "cache"
-        copy_tree(shared, private)
-        args = [
-            str(layout.snapshot),
-            c.slug,
-            c.title or c.slug,
-            settings.to_argv(),
-            str(private),
-            str(tinytex()),
-            str(layout.process(f"pass1-{c.slug}")),
-        ]
-        jobs.append((f"pass1-{c.slug}", "pass1", args))
+    jobs = pass1_jobs(layout, script, settings, shared)
     width = pass1_width(workers, len(jobs))
     rss, peak = run_all(jobs, width, env, layout, "pass 1")
     records = [
@@ -224,18 +233,16 @@ def build(talk: Path, workers: int | None) -> int:
     )
 
     findings = pairing(script, records)
-    findings += [
-        Finding(
-            "empty-beat",
-            f'{r.file}:{b.line} beat "{b.slug}" has no animation; give it one (talk.wait() holds the frame)',
-        )
-        for r in records
-        for b in r.beats
-        if not b.run_times
-    ]
-    findings += geometry.check(
-        [b for r in records for b in r.beats], settings.frame_width, settings.frame_height, settings.pixel_width
-    )
+    for r in records:  # one chapter at a time: a beat's index (transient marks) is its index in its own chapter
+        findings += [
+            Finding(
+                "empty-beat",
+                f'{r.file}:{b.line} beat "{b.slug}" has no animation; give it one (talk.wait() holds the frame)',
+            )
+            for b in r.beats
+            if not b.run_times
+        ]
+        findings += geometry.check(r.beats, settings.frame_width, settings.frame_height, settings.pixel_width)
     if findings:
         report(findings)
     say(f"checks passed · {time.monotonic() - t0:.2f}s")
@@ -245,23 +252,24 @@ def build(talk: Path, workers: int | None) -> int:
 
 
 def pass1_width(workers: int | None, jobs: int) -> int:
+    estimate = f"{PASS1_RAM / 2**30:.2f} GB per job est"
     if workers is not None:
-        say(f"pass-1 width: {workers} (--workers)")
+        say(f"pass-1 width: {workers} (--workers) · {estimate}")
         return workers
-    import psutil
-
     if jobs == 1:
         tagged = headroom.ram_only(psutil.virtual_memory().available, PASS1_RAM)
+        label = "1 job"
     else:
         h = headroom.sample(headroom.MIN_SAMPLE_WINDOW)
         tagged = headroom.width(h, PASS1_CORES, PASS1_RAM, jobs)
+        label = f"idle {h.idle_cores:.1f} cores, {h.available_ram / 2**30:.0f} GB free"
         say(
-            f"headroom: idle {h.idle_cores:.1f} cores, {h.available_ram / 2**30:.0f} GB free · "
             f"machine: idle_cores={h.idle_cores!r} available_ram={h.available_ram} per_job_cores={PASS1_CORES!r} "
             f"per_job_ram={PASS1_RAM} jobs={jobs}"
         )
     match tagged:
         case headroom.Width(n):
+            say(f"pass-1 width: {n} ({label}) · {estimate}")
             return n
         case headroom.RamExceeded(per_job, available):
             raise BuildError(
@@ -286,7 +294,7 @@ def merge_caches(layout: Layout, shared: Path, chapters: list[str]) -> int:
                 if dst.exists():
                     continue
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                tmp = dst.with_name(f".tmp-{os.getpid()}-{threading.get_ident()}-{f}")
+                tmp = dst.with_name(f".tmp-{os.getpid()}-{f}")
                 copy_file(src, tmp)
                 os.replace(tmp, dst)
                 n += 1

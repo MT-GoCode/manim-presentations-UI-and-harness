@@ -6,8 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
-from manim import BLUE, RED, Circle, FadeIn, ImageMobject, PointCloudDot, Scene, Square, config, tempconfig
+from manim import BLUE, RED, Circle, FadeIn, ImageMobject, PointCloudDot, Scene, Square, tempconfig
 
 from manim_presentations import clip, manim_hooks
 from manim_presentations.settings import Settings
@@ -85,7 +86,11 @@ def test_render_config_ignores_a_user_manim_cfg(tmp_path):
     assert out == ["30", "480", "#000000"]
 
 
-def test_creation_lines_name_the_chapter_line_even_inside_a_helper(tmp_path):
+def test_creation_lines_name_the_chapter_line_even_inside_a_helper(tmp_path, monkeypatch):
+    from manim import Mobject
+
+    monkeypatch.setattr(Mobject, "__init__", Mobject.__init__)  # restored after the test: the hook patches the class
+    monkeypatch.setattr(Mobject, "copy", Mobject.copy)
     chapter = tmp_path / "ch.py"
     helper_src = "from manim import Circle\ndef make():\n    return Circle()\n"
     helper = {}
@@ -99,15 +104,55 @@ def test_creation_lines_name_the_chapter_line_even_inside_a_helper(tmp_path):
 
 
 def test_projection_is_where_the_camera_draws():
+    """A moved camera: the object's drawn position is its position minus the frame centre."""
     clip.render_config(SETTINGS)
 
     class S(Scene):
         pass
 
     s = S()
+    s.camera.frame_center = np.array([0.5, -0.25, 0.0])
     c = Circle().shift([2, 1, 0])
     pts = manim_hooks.screen(s.camera, c, c.points)
-    assert pts[:, 0].mean() == pytest.approx(2, abs=1e-6) and pts[:, 1].mean() == pytest.approx(1, abs=1e-6)
+    assert pts[:, 0].mean() == pytest.approx(1.5, abs=1e-6) and pts[:, 1].mean() == pytest.approx(1.25, abs=1e-6)
+
+
+def test_recorder_digest_includes_the_frame_centre():
+    def centred(x):
+        def build(s):
+            s.camera.frame_center = np.array([x, 0.0, 0.0])
+            s.play(FadeIn(Square()))
+
+        return build
+
+    assert digests(centred(0.0)) != digests(centred(0.5))
+
+
+def test_recorder_chains_frames_drawn_on_the_static_image():
+    """A still object is drawn once into the static frame; every animated frame starts from it."""
+
+    def still(color):
+        def build(s):
+            s.add(Square(color=color).shift([-2, 0, 0]))
+            s.play(FadeIn(Circle()))
+
+        return build
+
+    assert digests(still(BLUE)) != digests(still(RED))
+
+
+def test_recorder_sees_background_image_vmobjects(tmp_path):
+    from PIL import Image
+
+    def image(rgb, name):
+        Image.new("RGB", (8, 8), rgb).save(tmp_path / name)
+
+        def build(s):
+            s.play(FadeIn(Circle().set_fill(opacity=1).color_using_background_image(str(tmp_path / name))))
+
+        return build
+
+    assert digests(image((255, 0, 0), "r.png")) != digests(image((0, 255, 0), "g.png"))
 
 
 def test_play_index_counts_plays():
@@ -160,4 +205,3 @@ def test_pass1_writes_no_bytecode(tmp_path):
     assert r.returncode == 0, r.stderr
     assert (out / "records.json").exists()
     assert not list(snap.rglob("__pycache__"))
-    config.dry_run = False

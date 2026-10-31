@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -48,5 +49,5 @@ def test_help_imports_no_manim():
 
 
 def test_import_contracts_hold():
-    result = subprocess.run([sys.executable, "-m", "importlinter.cli", "lint"], capture_output=True, text=True)
+    result = subprocess.run([str(Path(sys.executable).parent / "lint-imports")], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr

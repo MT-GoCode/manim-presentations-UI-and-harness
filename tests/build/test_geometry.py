@@ -1,7 +1,7 @@
 """The geometry check through `mpres build`, on Explainers' vendored geometry fixture: every beat expects exactly
 its messages (none for the cases that must pass; those are the beats not named below)."""
 
-from conftest import mpres
+from conftest import TEST_WORKERS_WIDE, mpres
 
 EXPECTED = [
     "dot-on-dot · chapters/geometry.py:44 · Dot at (0.00, 0.00) × Dot at (0.10, 0.00) (chapters/geometry.py:44) · move Dot by (-0.06, +0.00)",
@@ -21,7 +21,7 @@ EXPECTED = [
 
 
 def test_every_case_gets_exactly_its_messages(talk):
-    r = mpres("build", str(talk("geometry")), "--workers", "4")
+    r = mpres("build", str(talk("geometry")), "--workers", str(TEST_WORKERS_WIDE))
     assert r.returncode == 1, r.stdout + r.stderr
     got = [line.removeprefix("error: ") for line in r.stderr.splitlines() if line.startswith("error: ")]
     assert got == EXPECTED

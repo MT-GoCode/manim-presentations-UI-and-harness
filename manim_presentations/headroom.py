@@ -1,14 +1,16 @@
 """How many jobs fit: up to 75% of the CPU and RAM free when a phase starts (Minh's rule), from measured per-job peaks.
 Callers route on the tag: Width(n), or RamExceeded when one job alone does not fit in 75% of free RAM."""
 
-import os
 from dataclasses import dataclass
 from math import floor
 
 import psutil
 
 FRACTION = 0.75  # Minh: parallel builds use up to 75% of available CPU and RAM by default
-MIN_SAMPLE_WINDOW = None  # set from P5 below
+# Seconds. On macOS psutil's per-CPU idle over a shorter window reads biased low, not just noisy (an idle 18-core
+# M-series Mac: 1.0 idle cores at 0.05 s, 8.7 at 0.5 s, 17.2-17.7 from 1.0 s on, spread 0.44); the shortest window
+# that reads true. Every sample with more than one job costs this once.
+MIN_SAMPLE_WINDOW = 1.0
 
 
 @dataclass(frozen=True)
@@ -33,7 +35,7 @@ def sample(window_s: float) -> Headroom:
     children, so no own-load term is needed."""
     per_cpu = psutil.cpu_times_percent(interval=window_s, percpu=True)
     busy = sum(100.0 - c.idle for c in per_cpu) / 100.0
-    return Headroom(idle_cores=(os.cpu_count() or 1) - busy, available_ram=psutil.virtual_memory().available)
+    return Headroom(idle_cores=len(per_cpu) - busy, available_ram=psutil.virtual_memory().available)
 
 
 def width(h: Headroom, per_job_cores: float, per_job_ram: int, jobs: int) -> Width | RamExceeded:

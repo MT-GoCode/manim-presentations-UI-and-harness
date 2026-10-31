@@ -54,6 +54,7 @@ def test_a_link_to_another_clone_is_relinked_and_reported(clone, tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert f"relinked {home}/.local/bin/mpres: /elsewhere/bin/mpres -> {clone}/bin/mpres" in r.stdout
     assert os.readlink(home / ".local/bin/mpres") == str(clone / "bin/mpres")
+    assert not (home / "zdot" / ".zshrc").exists()  # ~/.local/bin already on PATH (as CI arranges): no rc line
 
 
 def test_a_shadowing_mpres_fails_naming_it(clone, tmp_path):

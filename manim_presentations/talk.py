@@ -103,6 +103,8 @@ class Talk(Scene):
         self._start(slug, "loop")
 
     def _start(self, slug: str, kind: BeatKind) -> None:
+        if any(b.slug == slug for b in self.beats):
+            raise TalkError(f'{self._where()}: beat "{slug}" was already started in this chapter')
         if self.beats:
             self._close()
         self.beats.append(_Beat(slug, kind, self._line(), manim_hooks.play_index(self)))
@@ -158,7 +160,6 @@ class Pass1Talk(Talk):
 
     def _end_state(self) -> tuple[Unit, ...]:
         units: list[Unit] = []
-        screen = lambda m, p: manim_hooks.screen(self.camera, m, p)  # noqa: E731
 
         def visit(
             m: Mobject,
@@ -178,7 +179,7 @@ class Pass1Talk(Talk):
                 for s in m.submobjects:
                     visit(s, made, [*groups, id(m)], attached, transient, bleed)
                 return
-            g, d, s, f = _leaves(m, screen)
+            g, d, s, f = _leaves(m, self.camera)
             if not (g or d or s or f):  # draws nothing (wait() adds such a placeholder): not on screen
                 return
             assert made is not None, f"{type(m).__name__} has no creation line"  # all talk code runs from a chapter
@@ -220,24 +221,26 @@ Leaves = tuple[list[Box], list[Box], list[tuple[tuple[float, float], ...]], list
 
 
 def _leaves(
-    m: Mobject, screen: Any, glyph: bool = False, background: bool = False, out: Leaves | None = None
+    m: Mobject, camera: Any, glyph: bool = False, background: bool = False, out: Leaves | None = None
 ) -> Leaves:
     """Children first, then the mobject's own path (an Arrow's shaft is the parent; its tip is a child)."""
     out = out if out is not None else ([], [], [], [])
     glyph = glyph or isinstance(m, GLYPHS)
     background = background or isinstance(m, BACKGROUND)
     for s in m.submobjects:
-        _leaves(s, screen, glyph, background, out)
+        _leaves(s, camera, glyph, background, out)
     if isinstance(m, ImageMobject):
-        out[3].append(_box(screen(m, m.points)))
+        out[3].append(_box(manim_hooks.screen(camera, m, m.points)))
     elif isinstance(m, VMobject) and len(m.points):
         if glyph:
-            out[0].append(_box(screen(m, m.points)))
+            out[0].append(_box(manim_hooks.screen(camera, m, m.points)))
         elif isinstance(m, Dot):
-            out[1].append(_box(screen(m, m.points)))
+            out[1].append(_box(manim_hooks.screen(camera, m, m.points)))
         elif m.get_stroke_width() > 0 and m.get_stroke_opacity() > 0:
             if not background:
-                out[2].extend(tuple((float(x), float(y)) for x, y in screen(m, p)) for p in _polylines(m))
+                out[2].extend(
+                    tuple((float(x), float(y)) for x, y in manim_hooks.screen(camera, m, p)) for p in _polylines(m)
+                )
         elif m.get_fill_opacity() > 0:
-            out[3].append(_box(screen(m, m.points)))
+            out[3].append(_box(manim_hooks.screen(camera, m, m.points)))
     return out

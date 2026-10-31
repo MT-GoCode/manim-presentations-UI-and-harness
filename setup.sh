@@ -8,7 +8,11 @@ echo "       re-running is safe and fast."
 cd "$(dirname "$0")"
 REPO=$PWD
 DEV=0
-[ "${1:-}" = "--dev" ] && DEV=1
+case "${1:-}" in
+  "") ;;
+  --dev) DEV=1 ;;
+  *) echo "setup: unknown argument $1 (usage: ./setup.sh [--dev])" >&2; exit 2 ;;
+esac
 N=6
 phase() { echo "phase $1/$N: $2"; }
 
@@ -21,20 +25,22 @@ for pkg in cairo pkg-config uv; do brew list --versions "$pkg" >/dev/null || bre
 export PATH="$BREW/bin:$PATH"
 
 phase 3 "TinyTeX (repo-local)"
-TINYTEX_VERSION=2026.10  # pinned: the TeX/text cache is keyed on this revision
+TINYTEX_VERSION=2026.10  # the installer bundle; packages come from the current repository (the TeX/text cache is
+#                         keyed on the installed package database, so any change shows up as a new cache)
 TEX="$REPO/.tinytex/TinyTeX"
 if ! ls "$TEX"/bin/*/tlmgr >/dev/null 2>&1; then
   mkdir -p .tinytex
   curl -sL https://yihui.org/tinytex/install-bin-unix.sh |
     TINYTEX_DIR="$REPO/.tinytex" TINYTEX_VERSION="$TINYTEX_VERSION" sh -s - "" --no-path
-  BIN=$(dirname "$(ls "$TEX"/bin/*/tlmgr)")
-  "$BIN/tlmgr" update --self  # a bundle can lag the package repo; tlmgr refuses installs until it is current
-  # The packages Manim's default TeX template and MathTex need (Manim docs' TinyTeX list, minus the CJK set).
-  "$BIN/tlmgr" install amsmath babel-english cbfonts-fd cm-super count1to doublestroke dvisvgm everysel fontspec \
-    frcursive fundus-calligra gnu-freefont jknapltx latex-bin mathastext microtype multitoc physics preview \
-    prelim2e ragged2e relsize rsfs setspace standalone tipa wasy wasysym xcolor xetex xkeyval
-fi
-dirname "$(ls "$TEX"/bin/*/tlmgr)" > .tinytex/bin-path
+  "$(dirname "$(ls "$TEX"/bin/*/tlmgr)")/tlmgr" update --self  # a bundle can lag the repository; tlmgr refuses
+fi                                                              # installs until it is current
+BIN=$(dirname "$(ls "$TEX"/bin/*/tlmgr)")
+# The packages Manim's default TeX template and MathTex need (Manim docs' TinyTeX list, minus the CJK set). Run every
+# time: a no-op when present, and it completes an install a failed run left half done.
+"$BIN/tlmgr" install amsmath babel-english cbfonts-fd cm-super count1to doublestroke dvisvgm everysel fontspec \
+  frcursive fundus-calligra gnu-freefont jknapltx latex-bin mathastext microtype multitoc physics preview \
+  prelim2e ragged2e relsize rsfs setspace standalone tipa wasy wasysym xcolor xetex xkeyval >/dev/null
+echo "$BIN" > .tinytex/bin-path
 
 phase 4 "Python environment"
 if [ "$DEV" = 1 ]; then

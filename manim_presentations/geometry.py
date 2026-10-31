@@ -7,17 +7,19 @@ meets glyphs and dots (a dot on a line or curve is a marker placed there). Fill-
 
 import math
 from collections.abc import Sequence
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 import numpy as np
 
 from manim_presentations.records import BeatRecord, Unit
 
+Kind = Literal["pairing", "empty-beat", "overlap", "off-frame", "transient"]
+
 
 class Finding(NamedTuple):
     """A check failure: its kind (marked where it is found, so counts per kind never parse text) and its message."""
 
-    kind: str
+    kind: Kind
     text: str
 
 

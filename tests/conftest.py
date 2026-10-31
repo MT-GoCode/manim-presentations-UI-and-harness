@@ -1,4 +1,6 @@
 import fcntl
+import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -10,7 +12,40 @@ TESTS = Path(__file__).parent
 FIXTURES = TESTS / "fixtures"
 REPO = TESTS.parent
 LEVELS = ("unit", "build", "qt", "export", "e2e")
+TALKS = {  # every talk a test may copy, by name
+    "hello": REPO / "examples" / "hello.manim-presentation",
+    "edge": FIXTURES / "edge.manim-presentation",
+    "geometry": FIXTURES / "geometry.manim-presentation",
+}
 TEST_SIZE = '[render]\npixel_width = 480\npixel_height = 270\norigin = "test speed"\n'
+TEST_WORKERS = 2  # the smallest width that exercises concurrency
+TEST_WORKERS_WIDE = 4  # enough to interleave on mac-work-2 while staying under the runner's RAM (P5)
+SUBPROCESS_TIMEOUT = 600  # s: a hung build fails its test instead of hanging the suite; ~50× the slowest build test
+
+MiB = 2**20
+# Measured process-tree peaks (cores, bytes) of each level's heaviest test on mac-work-2 (`/usr/bin/time -l`): unit, the
+# whole in-process unit run; build, a pass-1 build at --workers 4 on the 2160-px geometry fixture (parent 191 MiB +
+# four 180 MiB children); e2e, one setup.sh run on a repo copy. Every xdist slot is sized for the heaviest, so slots
+# never oversubscribe (a stated trade: a light test holds a heavy slot).
+TEST_COST = {"unit": (0.5, 213 * MiB), "build": (1.1, 911 * MiB), "e2e": (1.05, 245 * MiB)}
+
+
+def pytest_xdist_auto_num_workers(config: pytest.Config) -> int:
+    """`-n auto`: the same 75%-of-free-headroom rule as the build, from the heaviest level's measured cost."""
+    from manim_presentations import headroom
+
+    cores = max(c for c, _ in TEST_COST.values())
+    ram = max(r for _, r in TEST_COST.values())
+    jobs = os.cpu_count()
+    assert jobs is not None
+    match headroom.width(headroom.sample(headroom.MIN_SAMPLE_WINDOW), cores, ram, jobs):
+        case headroom.Width(n):
+            return n
+        case headroom.RamExceeded(per_job, available):
+            raise pytest.UsageError(
+                f"one test needs {per_job / 2**30:.1f} GB, more than 75% of the "
+                f"{available / 2**30:.1f} GB free; pass -n 1 to run anyway"
+            )
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -25,18 +60,19 @@ def mpres(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[st
     """The engine of the clone under test (this venv's interpreter), never `mpres` from PATH, which points at
     whichever clone setup last linked."""
     return subprocess.run(
-        [sys.executable, "-P", "-m", "manim_presentations.cli", *args], cwd=cwd, capture_output=True, text=True
+        [sys.executable, "-P", "-m", "manim_presentations.cli", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=SUBPROCESS_TIMEOUT,
     )
 
 
-def copy_talk(tmp_path: Path, fixture: str, overlay: str | None = None) -> Path:
-    """A fixture copied into tmp_path, plus at most one overlay (its chapters and the script.md lines it adds).
+def copy_talk(tmp_path: Path, name: str, overlay: str | None = None) -> Path:
+    """A talk copied into tmp_path, plus at most one overlay (its chapters and the script.md lines it adds).
     examples/hello copies get the test render size, since the template itself ships with the defaults."""
-    src = REPO / "examples" / f"{fixture}.manim-presentation"
-    if not src.exists():
-        src = FIXTURES / f"{fixture}.manim-presentation"
-    root = tmp_path / f"{fixture}.manim-presentation"
-    shutil.copytree(src, root, ignore=shutil.ignore_patterns("build", "__pycache__"))
+    root = tmp_path / f"{name}.manim-presentation"
+    shutil.copytree(TALKS[name], root, ignore=shutil.ignore_patterns("build", "__pycache__"))
     if not (root / "talk.toml").exists():
         (root / "talk.toml").write_text(TEST_SIZE)
     if overlay:
@@ -47,6 +83,14 @@ def copy_talk(tmp_path: Path, fixture: str, overlay: str | None = None) -> Path:
     return root
 
 
+def tree_digest(root: Path) -> str:
+    h = hashlib.sha256()
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and p.name != ".complete":
+            h.update(str(p.relative_to(root)).encode() + p.read_bytes())
+    return h.hexdigest()
+
+
 @pytest.fixture(scope="session")
 def warm_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """One warm TeX/text cache per session (xdist's documented recipe: one writer under a lock, the others read)."""
@@ -55,23 +99,25 @@ def warm_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
     with (shared / "warm-cache.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if not (done / ".complete").exists():
-            root = copy_talk(shared / "warm-src", "edge", "twins") if not (shared / "warm-src").exists() else None
-            root = root or shared / "warm-src" / "edge.manim-presentation"
-            r = mpres("build", str(root), "--workers", "4")
+            shutil.rmtree(shared / "warm-src", ignore_errors=True)
+            root = copy_talk(shared / "warm-src", "edge", "twins")
+            r = mpres("build", str(root), "--workers", str(TEST_WORKERS_WIDE))
             assert r.returncode == 0, r.stdout + r.stderr
             shutil.copytree(root / "build" / ".cache", done, dirs_exist_ok=True)
-            (done / ".complete").touch()
+            (done / ".complete").write_text(tree_digest(done))
     return done
 
 
 @pytest.fixture
 def talk(tmp_path: Path, warm_cache: Path):
-    """Factory: talk(fixture, overlay=None) → a copy whose build/.cache is seeded from the warm cache."""
+    """Factory: talk(name, overlay=None, cold=False) → a copy whose build/.cache is seeded from (a real copy of) the
+    warm cache. On teardown, the warm cache must be exactly as it was: no test's build may write to it."""
 
-    def make(fixture: str, overlay: str | None = None, cold: bool = False) -> Path:
-        root = copy_talk(tmp_path, fixture, overlay)
+    def make(name: str, overlay: str | None = None, cold: bool = False) -> Path:
+        root = copy_talk(tmp_path, name, overlay)
         if not cold:
             shutil.copytree(warm_cache, root / "build" / ".cache", ignore=shutil.ignore_patterns(".complete"))
         return root
 
-    return make
+    yield make
+    assert tree_digest(warm_cache) == (warm_cache / ".complete").read_text(), "a test's build wrote the warm cache"

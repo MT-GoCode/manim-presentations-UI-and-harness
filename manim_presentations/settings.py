@@ -8,7 +8,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-FRAME_HEIGHT_UNITS = 8.0  # Manim's frame height; frame_width follows the pixels' shape so a unit stays square
+FRAME_HEIGHT_UNITS = 8.0  # Manim's frame height: the default frame_width is 8 · W / H
 SCALE_FACTOR_PER_FONT_POINT = 1 / 960  # manim/constants.py: scene units per font_size point
 
 EXAMPLE = """[render]
@@ -71,7 +71,8 @@ class Settings(BaseModel):
 
     @property
     def frame_height(self) -> float:
-        return FRAME_HEIGHT_UNITS
+        """Square units: the frame takes the pixels' shape (as the as-built engine did)."""
+        return self.frame_width * self.pixel_height / self.pixel_width
 
     @model_validator(mode="after")
     def _even(self) -> Self:
