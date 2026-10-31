@@ -24,19 +24,31 @@ TEST_WORKERS_WIDE = 4  # enough to interleave on mac-work-2 while staying under 
 SUBPROCESS_TIMEOUT = 600  # s: a hung build fails its test instead of hanging the suite; ~50× the slowest build test
 
 MiB = 2**20
-# Measured process-tree peaks (cores, bytes) of each level's heaviest test on mac-work-2 (`/usr/bin/time -l`): unit, the
-# whole in-process unit run; build, a pass-1 build at --workers 4 on the 2160-px geometry fixture (parent 191 MiB +
-# four 180 MiB children); e2e, one setup.sh run on a repo copy. Every xdist slot is sized for the heaviest, so slots
-# never oversubscribe (a stated trade: a light test holds a heavy slot).
-TEST_COST = {"unit": (0.5, 213 * MiB), "build": (1.1, 911 * MiB), "e2e": (1.05, 245 * MiB)}
+# Measured process-tree peaks (cores, bytes) of each level's heaviest test (`/usr/bin/time -l`, mac-work-2): unit, the
+# whole in-process unit run; e2e, one setup.sh run on a repo copy. Every xdist slot is sized for the heaviest, so
+# slots never oversubscribe (a stated trade: a light test holds a heavy slot).
+TEST_COST = {"unit": (0.5, 213 * MiB), "e2e": (1.05, 245 * MiB)}
+BUILD_PARENT_RSS = 191 * MiB  # the build parent's peak RSS (mac-work-2, `/usr/bin/time -l`)
+PASS1_RSS_TEST = 138 * MiB  # the edge fixture's largest pass1_rss at 480×270 (index.json, mac-personal)
+
+
+def build_cost() -> tuple[float, int]:
+    """PLAN §3.11: the parent plus TEST_WORKERS_WIDE render workers, each its chapter's pass-1 peak plus the worker
+    overhead at the test size (the render phase outweighs pass 1's TEST_WORKERS_WIDE children). 5.2 cores, 1073 MiB;
+    the sampled tree peak of an edge build at --workers 4 was 4.37 cores, 803 MiB (mac-personal)."""
+    from manim_presentations import build
+
+    worker_ram = PASS1_RSS_TEST + build.worker_overhead(480 * 270 / 1e6)
+    return TEST_WORKERS_WIDE * build.WORKER_CORES, BUILD_PARENT_RSS + TEST_WORKERS_WIDE * worker_ram
 
 
 def pytest_xdist_auto_num_workers(config: pytest.Config) -> int:
     """`-n auto`: the same 75%-of-free-headroom rule as the build, from the heaviest level's measured cost."""
     from manim_presentations import headroom
 
-    cores = max(c for c, _ in TEST_COST.values())
-    ram = max(r for _, r in TEST_COST.values())
+    costs = [*TEST_COST.values(), build_cost()]
+    cores = max(c for c, _ in costs)
+    ram = max(r for _, r in costs)
     jobs = os.cpu_count()
     assert jobs is not None
     match headroom.width(headroom.sample(headroom.MIN_SAMPLE_WINDOW), cores, ram, jobs):
