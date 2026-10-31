@@ -11,6 +11,7 @@ import sys
 if __name__ == "__main__":
     os.chdir(sys.argv[1])
 
+import tempfile
 import threading
 from os.path import realpath
 from pathlib import Path
@@ -57,6 +58,8 @@ class ReadGuard:
             realpath(p) for p in (snapshot, sys.prefix, sys.base_prefix, package, tinytex, cache, *SYSTEM_ROOTS)
         )
         self.listing_roots = tuple(realpath(p) for p in sys.path if p)  # importlib scans every sys.path entry
+        # tempfile opens its directory itself (O_RDWR | O_CREAT on a directory: no file bytes); nothing inside it
+        self.tempdir = realpath(tempfile.gettempdir())
         self.active = False
         self.violations: list[str] = []
         self.cache_entries: set[str] = set()
@@ -74,7 +77,7 @@ class ReadGuard:
             if cannot_read(args[2]):  # only reads are checked; writes are confined by dry_run and media_dir
                 return
         roots = self.roots + (self.listing_roots if event != "open" else ())
-        if not any(p == r or p.startswith(r + os.sep) for r in roots):
+        if p != self.tempdir and not any(p == r or p.startswith(r + os.sep) for r in roots):
             self.violations.append(p)
             raise PermissionError(f"a talk reads only files inside its own folder; {p} is outside it")
 

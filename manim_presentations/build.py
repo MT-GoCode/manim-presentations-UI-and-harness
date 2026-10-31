@@ -437,13 +437,6 @@ def build(talk: Path, workers: int | None) -> int:
                 raise BuildError(1, [f"{r.file}:{b.line} beat {b.slug}: stream check failed: {'; '.join(errs)}"])
             sha = sha256(tmp)
             os.replace(tmp, layout.clip(sha))  # verified, hashed, then at its content address
-        ends: tuple[tuple[Literal["first", "last"], int], ...] = (
-            ("first", 0),
-            ("last", sum(a.frames for a in b.animations) - 1),
-        )
-        for which, index in ends:
-            if not (still := layout.still(sha, STILLS_HASH, which)).exists():
-                stills.still_at(layout.clip(sha), index, still)
         return IndexBeat(
             chapter=r.chapter,
             slug=b.slug,
@@ -456,8 +449,19 @@ def build(talk: Path, workers: int | None) -> int:
             last_png=str(layout.still(sha, STILLS_HASH, "last").relative_to(layout.build)),
         )
 
+    def extract(job: tuple[str, Literal["first", "last"], int]) -> None:
+        sha, which, index = job
+        stills.still_at(layout.clip(sha), index, layout.still(sha, STILLS_HASH, which))
+
     with ThreadPoolExecutor(join_width) as pool:
         built = list(pool.map(finish, beats_in_order))
+        # Each missing still once: two beats can share a clip (identical frames), so stills go by clip, not by beat.
+        needed: dict[tuple[str, Literal["first", "last"]], int] = {}
+        for b in built:
+            needed[(b.clip, "first")] = 0
+            needed[(b.clip, "last")] = b.frames - 1
+        missing = [(sha, w, i) for (sha, w), i in needed.items() if not layout.still(sha, STILLS_HASH, w).exists()]
+        list(pool.map(extract, missing))
     say(f"join: {len(built) - len(reused)} clips joined and stream-checked · {time.monotonic() - t3:.2f}s")
 
     # Commit: the index last and atomically; then GC everything no index or live Presenter references.
