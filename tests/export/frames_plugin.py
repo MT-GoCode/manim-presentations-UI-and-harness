@@ -1,56 +1,62 @@
 """Fixtures for the export tests (loaded through `pytest_plugins`, never imported): the frames talk built once per
 session, and a private copy of it per test."""
 
-import fcntl
-import os
+import functools
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from conftest import TEST_WORKERS, mpres
+from conftest import TEST_WORKERS, mpres, once, untouched
 from frames import FRAMES, PAGE_JS, Player, manifest
 from playwright.sync_api import sync_playwright
 
 
 @pytest.fixture(scope="session")
-def built(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """The frames talk built once per session (one writer under a lock, the others read); tests copy it."""
-    base = tmp_path_factory.getbasetemp()
-    shared = base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base
-    root = shared / "frames-built" / FRAMES.name
-    with (shared / "frames-built.lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not (root.parent / ".complete").exists():
-            shutil.rmtree(root.parent, ignore_errors=True)
-            shutil.copytree(FRAMES, root, ignore=shutil.ignore_patterns("build", "__pycache__"))
-            r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
-            assert r.returncode == 0, r.stdout + r.stderr
-            (root.parent / ".complete").touch()
-    return root
+def built(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """The frames talk built once per session; tests copy it, and nothing may write it."""
+
+    def make(done: Path) -> None:
+        root = shutil.copytree(FRAMES, done / FRAMES.name, ignore=shutil.ignore_patterns("build", "__pycache__"))
+        r = mpres("build", str(root), "--workers", str(TEST_WORKERS))
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    done = once(tmp_path_factory, "frames-built", make)
+    yield done / FRAMES.name
+    untouched(done)
 
 
 @pytest.fixture
-def frames_talk(built: Path, tmp_path: Path) -> Path:
+def frames_talk(built: Path, tmp_path: Path) -> Iterator[Path]:
     """A private copy of the built frames talk, build/ included, for tests that change or lock it."""
     root = tmp_path / FRAMES.name
     shutil.copytree(built, root, symlinks=True)
-    return root
+    yield root
+    untouched(built.parent)
 
 
 @pytest.fixture(scope="session")
-def exported(built: Path):
-    """exported(transcript) → the built frames talk exported once per session with that --transcript; read-only."""
+def exported(tmp_path_factory: pytest.TempPathFactory, built: Path):
+    """exported(transcript) → the frames talk exported once per session with that --transcript, from its own copy
+    (an export writes the talk's build/.export); read-only."""
 
+    @functools.cache
     def make(transcript: str) -> Path:
-        out = built.parent / f"frames-{transcript}.html"
-        with (built.parent / "export.lock").open("w") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            if not out.exists():
-                r = mpres(
-                    "export", str(built), "--out", str(out), "--transcript", transcript, "--workers", str(TEST_WORKERS)
-                )
-                assert r.returncode == 0, r.stdout + r.stderr
-        return out
+        def export(done: Path) -> None:
+            root = shutil.copytree(built, done / FRAMES.name, symlinks=True)
+            r = mpres(
+                "export",
+                str(root),
+                "--out",
+                str(done / "frames.html"),
+                "--transcript",
+                transcript,
+                "--workers",
+                str(TEST_WORKERS),
+            )
+            assert r.returncode == 0, r.stdout + r.stderr
+
+        return once(tmp_path_factory, f"frames-{transcript}", export) / "frames.html"
 
     return make
 

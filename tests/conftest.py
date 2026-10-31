@@ -115,9 +115,8 @@ def copy_talk(tmp_path: Path, name: str, overlay: str | None = None) -> Path:
 
 def tree_digest(root: Path) -> str:
     h = hashlib.sha256()
-    for p in sorted(root.rglob("*")):
-        if p.is_file():
-            h.update(str(p.relative_to(root)).encode() + p.read_bytes())
+    for p in sorted(root.rglob("*")):  # every path, so an empty folder made in it counts too
+        h.update(str(p.relative_to(root)).encode() + (p.read_bytes() if p.is_file() else b"/"))
     return h.hexdigest()
 
 
