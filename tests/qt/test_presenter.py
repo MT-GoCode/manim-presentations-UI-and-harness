@@ -556,3 +556,11 @@ def test_an_audience_dropping_after_the_window_is_gone_reaches_nothing(talk, qtb
     os.waitpid(pid, 0)
     os.close(fd)
     qtbot.wait(QUIET_MS)
+
+
+def test_moving_while_the_script_is_missing_shows_red(talk, open_, qtbot):
+    """The editor loads a beat's text on every move: with script.md gone it says so instead of raising in a slot."""
+    window = open_(talk)
+    (talk / "script.md").unlink()
+    window.go(p.At(slug="the-idea"), "show")
+    assert "script.md is missing" in window.status.text() and red(window)

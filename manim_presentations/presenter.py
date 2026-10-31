@@ -624,6 +624,9 @@ class Presenter(QMainWindow):
         slug = self.beat_at(self.position).slug
         try:
             text = script.load(self.script_path).beat(slug).text
+        except FileNotFoundError:
+            text = ""
+            self.red["structure"] = "script.md is missing"  # the folder watcher clears it when the file is back
         except ValueError as e:
             text = ""
             self.red["structure"] = f"script.md: {e}"
