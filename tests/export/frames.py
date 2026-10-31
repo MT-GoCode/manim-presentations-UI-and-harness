@@ -56,11 +56,12 @@ def decoded(clip: bytes) -> tuple[tuple[int, int, int], list[int]]:
 # bytes, not by anything the player says.
 _PAGE = """(ROW, CELLS) => {
   const live = new Map(), create = URL.createObjectURL, revoke = URL.revokeObjectURL;
-  URL.createObjectURL = (o) => { const u = create.call(URL, o); live.set(u, o); return u; };
+  URL.createObjectURL = (o) => { const u = create.call(URL, o); live.set(u, o); T.made.push(o); return u; };
   URL.revokeObjectURL = (u) => { live.delete(u); revoke.call(URL, u); };
   const canvas = document.createElement("canvas");
   window.T = {
     log: [],
+    made: [],  // every Blob given a URL, in order
     code(v) {
       const w = v.videoWidth, h = v.videoHeight;
       if (v.readyState < 2 || !w) return 0;
@@ -81,19 +82,25 @@ _PAGE = """(ROW, CELLS) => {
       const v = T.video();
       return v && {code: T.code(v), ended: v.ended, paused: v.paused};
     },
-    watch() {  // the front video at every change to the stage, before the browser paints it: [code, is it new]
-      new MutationObserver(() => { const v = T.video(); T.log.push(v ? [T.code(v), v !== T.old] : [-1, true]); })
+    watch() {  // the front video at every change to the stage, before the browser paints it:
+      // [code, is it the incoming element, is it seeking, is its source a live Blob URL]
+      new MutationObserver(() => {
+        const v = T.video();
+        T.log.push(v ? [T.code(v), v !== T.old, v.seeking, live.has(v.src)] : [-1, true, false, false]);
+      })
         .observe(document.getElementById("stage"), {subtree: true, childList: true, attributes: true});
     },
-    async liveBeats() {
+    async beats(blobs) {  // which clip each Blob holds, by its bytes
       const clips = [...document.querySelectorAll('script[type="application/octet-stream"]')].map((s) => atob(s.textContent));
       const out = [];
-      for (const blob of live.values()) {
+      for (const blob of blobs) {
         const bytes = new Uint8Array(await blob.arrayBuffer());
         out.push(clips.findIndex((c) => c.length === bytes.length && [...bytes].every((x, k) => x === c.charCodeAt(k))));
       }
       return out.sort((a, b) => a - b);
     },
+    liveBeats() { return T.beats(live.values()); },
+    madeBeats() { return T.beats(T.made); },
   };
 }"""
 PAGE_JS = f"({_PAGE})({ROW}, {CELLS});"
@@ -102,8 +109,8 @@ PAGE_JS = f"({_PAGE})({ROW}, {CELLS});"
 class Player:
     """One exported page in one browser, observed only through the stage's pixels, the DOM and the Blob ledger."""
 
-    def __init__(self, page):
-        self.page = page
+    def __init__(self, page, errors: list[str]):
+        self.page, self.errors = page, errors  # errors: the page's uncaught errors; none may be left at teardown
 
     def front(self) -> tuple[int, int] | None:
         """(beat index, frame index) shown at the stage's centre."""
@@ -122,13 +129,17 @@ class Player:
 
     def transition(self, press, old: int, beat: int, frame: int) -> None:
         """Act, wait for a new element in front showing the target, and check every front video seen at a DOM change
-        on the way: the outgoing element shows the outgoing beat, the incoming one shows the target beat and appears on
-        `frame` and is never unready (code 0), and there is always a video in front (-1 never). The outgoing one may read
-        0 only mid-wrap of its own loop, a seek the browser makes and the player never touches."""
+        on the way: always a video in front, from a live Blob URL; the outgoing element shows the outgoing beat; the
+        incoming one shows the target beat and appears on `frame`. Neither is ever unreadable (code 0), except the
+        outgoing one while it seeks: a loop's wrap, a seek the browser makes and the player never does to the front."""
         self.page.evaluate("T.log = []; T.old = T.video()")
         press()
         self.page.wait_for_function("() => T.video() !== T.old")  # the incoming element is in front
         self.settle(beat)
         log = self.page.evaluate("T.log")
-        assert all((c >> 8) - 1 == beat if new else c == 0 or (c >> 8) - 1 == old for c, new in log), log
-        assert next(c & 255 for c, new in log if new) == frame, log
+        assert all(c != -1 and live for c, _, _, live in log), log
+        assert all(
+            c > 0 and (c >> 8) - 1 == beat if new else (c == 0 and seeking) or (c > 0 and (c >> 8) - 1 == old)
+            for c, new, seeking, _ in log
+        ), log
+        assert next(c & 255 for c, new, _, _ in log if new) == frame, log

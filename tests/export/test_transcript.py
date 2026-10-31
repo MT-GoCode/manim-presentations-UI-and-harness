@@ -60,6 +60,7 @@ def test_clicking_an_entry_shows_that_beat_as_last_seen(open_player):
     p.transition(lambda: p.page.click("#transcript section:nth-of-type(2)"), 0, 1, 29)  # beat b's last frame
     assert current(p) == "Beat B </script> ends no script" and p.front() == (1, 29)
     assert p.page.evaluate("document.querySelectorAll('#transcript p.note').length") == 0  # narration: no notes
+    p.transition(lambda: p.page.click("#transcript section:nth-of-type(2)"), 1, 1, 29)  # the beat on screen: again
 
 
 def box(p, sel: str) -> dict:

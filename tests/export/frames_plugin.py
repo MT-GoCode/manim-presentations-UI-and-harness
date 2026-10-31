@@ -55,13 +55,15 @@ def exported(built: Path):
     return make
 
 
-@pytest.fixture(scope="session")
+# Per module, not per session: pytest closes module fixtures at the module's end, so a test elsewhere (the e2e chain)
+# can start its own Playwright in the same worker; two live sync Playwrights in one thread refuse to run.
+@pytest.fixture(scope="module")
 def playwright():
     with sync_playwright() as pw:
         yield pw
 
 
-@pytest.fixture(scope="session", params=["webkit", "chrome"])
+@pytest.fixture(scope="module", params=["webkit", "chrome"])
 def browser(request: pytest.FixtureRequest, playwright):
     """Headless WebKit, and the stock Chrome (it has the H.264 decoder bundled Chromium lacks)."""
     b = playwright.webkit.launch() if request.param == "webkit" else playwright.chromium.launch(channel="chrome")
@@ -75,7 +77,8 @@ def open_player(browser, exported):
     Blob is aborted and recorded, and must not happen; neither may a page error."""
     opened = []
 
-    def make(transcript: str = "none", viewport: tuple[int, int] = (960, 600)) -> Player:
+    def make(transcript: str = "none", viewport: tuple[int, int] = (960, 600), file: Path | None = None) -> Player:
+        """`file`: a page of the test's own instead of the session's export."""
         context = browser.new_context(viewport={"width": viewport[0], "height": viewport[1]})
         aborted: list[str] = []
         errors: list[str] = []
@@ -91,10 +94,10 @@ def open_player(browser, exported):
         context.add_init_script(PAGE_JS)
         page = context.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
-        opened.append((context, aborted, errors))
-        page.goto(exported(transcript).as_uri())
+        opened.append((context, aborted, errors))  # errors is the Player's list: a test may take the ones it expects
+        page.goto((file or exported(transcript)).as_uri())
         page.evaluate("T.watch()")
-        p = Player(page)
+        p = Player(page, errors)
         p.settle(0, 0)  # Before: beat 0's first frame
         return p
 

@@ -4,6 +4,7 @@ a clip's fingerprint, and embedded as base64 blocks the player turns into Blob U
 
 import base64
 import functools
+import html
 import json
 import multiprocessing
 import os
@@ -26,6 +27,7 @@ ENCODE_CORES = 1.35  # P4: the largest CPU/wall of 1,539 threads=1 jobs (median 
 MiB = 2**20
 PLAYER = Path(__file__).with_name("player.html")
 MANIFEST = "<!--manifest-->"  # where the page's data goes in player.html
+TITLE = "<!--title-->"
 # protocol.KEYS names Qt keys, which are logical (layout-mapped) keys; so are KeyboardEvent.key values. Qt's Key_R is
 # R with or without Shift.
 DOM_KEY = {
@@ -97,7 +99,9 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
         manifest = {
             "title": talk.title,
             "fps": r.fps,
-            "chapters": {c.slug: c.title or c.slug for c in talk.chapters},
+            "chapters": [
+                [c.slug, c.title or c.slug] for c in talk.chapters
+            ],  # a list: JS orders integer-like keys first
             "keys": {key: a for q, a in protocol.KEYS.items() for key in DOM_KEY[q]},
             "transcript": transcript,
             "beats": [
@@ -113,7 +117,8 @@ def export(root: Path, out: Path, height: int | None, crf: int | None, transcrip
             ],
         }
         safe = json.dumps(manifest).replace("</", "<\\/")  # no string in it can close the script element
-        head, tail = PLAYER.read_text(encoding="utf-8").split(MANIFEST)
+        page_html = PLAYER.read_text(encoding="utf-8").replace(TITLE, html.escape(talk.title))
+        head, tail = page_html.split(MANIFEST)
         with partial.open("w", encoding="utf-8") as page:  # streamed: a long talk's clips never sit in memory at once
             page.write(f'{head}<script type="application/json" id="manifest">{safe}</script>\n')
             for i, c in enumerate(clips):

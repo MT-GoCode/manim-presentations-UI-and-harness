@@ -4,6 +4,7 @@ the controls. The frames talk: beats a, b, c (a loop), d; frame k of beat index 
 
 import itertools
 import json
+import re
 
 import pytest
 from conftest import REPO, TESTS
@@ -82,7 +83,7 @@ def test_presses_faster_than_the_player_land_once_on_the_last(player):
         "for (let i = 0; i < 3; i++) document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowDown'}))"
     )
     player.settle(2, None)
-    assert {(c >> 8) - 1 for c, _ in player.page.evaluate("T.log")} <= {0, 2}  # beat 1 was never raised
+    assert {(c >> 8) - 1 for c, *_ in player.page.evaluate("T.log")} <= {0, 2}  # beat 1 was never raised
     player.page.wait_for_function("() => document.querySelectorAll('#stage video').length === 1")
 
 
@@ -92,23 +93,38 @@ def test_replay_and_jumps_show_the_beat_as_the_presenter_would(player, frames):
     player.transition(press(player, "KeyR"), 0, 0, 0)  # Replay: from frame 0 again
     player.transition(lambda: player.page.select_option("#jump", "d"), 0, 3, frames[3] - 1)  # far ahead: last frame
     player.transition(lambda: player.page.select_option("#jump", "b"), 3, 1, frames[1] - 1)
-    player.page.evaluate("T.log = []")
-    player.transition(lambda: player.page.select_option("#jump", "b"), 1, 1, frames[1] - 1)  # the beat on screen
     assert player.front() == (1, frames[1] - 1) and player.videos() == 1
 
 
 def test_blob_urls_exist_for_the_current_beat_and_its_neighbours_only(player, frames):
-    def live():
-        return player.page.evaluate("T.liveBeats()")
+    def window(beat):
+        return [i for i in range(4) if abs(i - beat) <= 1]
 
-    assert live() == [0, 1]  # Before: beat 0 and its neighbour
+    assert player.page.evaluate("T.liveBeats()") == [0, 1]  # Before: beat 0 and its neighbour
     old = 0
-    for beat in range(4):
-        player.transition(press(player, "ArrowDown"), old, beat, 0)
-        assert live() == [i for i in range(4) if abs(i - beat) <= 1], beat
+    for press_it, beat, frame in [(press(player, "ArrowDown"), b, 0) for b in range(4)] + [
+        (lambda: player.page.select_option("#jump", "a"), 0, frames[0] - 1)
+    ]:
+        player.page.evaluate("T.made = []")
+        player.transition(press_it, old, beat, frame)
+        assert player.page.evaluate("T.liveBeats()") == window(beat), beat
+        assert set(player.page.evaluate("T.madeBeats()")) <= set(window(beat)), beat  # none made outside, even briefly
         old = beat
-    player.transition(lambda: player.page.select_option("#jump", "a"), 3, 0, frames[0] - 1)
-    assert live() == [0, 1]
+
+
+def test_a_clip_that_fails_to_load_says_so_and_the_last_frame_stays(open_player, exported, tmp_path):
+    html = exported("none").read_text()
+    broken = re.sub(r'(id="clip-1">)[^<]*', r"\1AAAAAAAA", html)  # valid base64, not a video
+    assert broken != html
+    (tmp_path / "broken.html").write_text(broken)
+    p = open_player(file=tmp_path / "broken.html")
+    p.transition(press(p, "ArrowDown"), 0, 0, 0)
+    p.page.keyboard.press("ArrowDown")
+    p.page.wait_for_function("() => document.body.classList.contains('failed')")
+    assert p.page.text_content("#status") == "Beat B </script> ends no script: the clip failed to load"
+    assert p.front()[0] == 0  # beat a stays on screen
+    assert len(p.errors) == 1 and "clip 1 failed to load" in p.errors[0], p.errors
+    p.errors.clear()
 
 
 def test_buttons_and_clicker_keys_act_like_the_arrows_and_auto_repeat_does_nothing(player, frames):

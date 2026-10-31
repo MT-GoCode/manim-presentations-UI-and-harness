@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mpres export</title>
+<title><!--title--></title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 15px/1.4 system-ui, sans-serif; }
   body { display: flex; flex-direction: column; }
@@ -20,6 +20,7 @@
   #bar #next { background: #2a5bd7; border-color: #2a5bd7; }
   #bar select { font: inherit; flex: 1; min-width: 0; background: #222; color: #eee; border: 1px solid #444; padding: 5px; }
   body.boundary #bar { box-shadow: inset 0 0 0 3px #d33; }
+  body.failed #status { color: #f66; }
 </style></head>
 <body>
 <div id="main"><div id="stage"></div></div>
@@ -28,14 +29,14 @@
   <button id="next" title="Next (↓, PageDown)">▼ Next</button>
   <button id="replay" title="Replay (R)">⟲ Replay</button>
   <select id="jump" aria-label="Jump to a beat"></select>
+  <span id="status"></span>
 </div>
 <!--manifest-->
 <script>
 "use strict";
 const M = JSON.parse(document.getElementById("manifest").textContent);
 const SLUGS = M.beats.map((b) => b.slug);
-const stage = document.getElementById("stage");
-document.title = M.title;
+const stage = document.getElementById("stage"), notice = document.getElementById("status");
 
 // The Position model of protocol.step, kept equal to it by tests/position_table.json.
 function step(position, action, slugs) {
@@ -45,7 +46,8 @@ function step(position, action, slugs) {
   const i = slugs.indexOf(position.slug);
   if (action === "next") return i + 1 < slugs.length ? {kind: "moved", position: {kind: "at", slug: slugs[i + 1]}} : {kind: "boundary"};
   if (action === "previous") return {kind: "moved", position: i ? {kind: "at", slug: slugs[i - 1]} : {kind: "before"}};
-  return {kind: "moved", position};  // replay
+  if (action === "replay") return {kind: "moved", position};
+  throw new Error("unknown action " + action);
 }
 
 // What a position shows after an action: Next and Replay play the beat; Previous and a jump show it as last seen
@@ -57,7 +59,9 @@ function showFor(position, action) {
   return {beat, frame: played ? 0 : b.frames - 1, play: played};
 }
 
-// Blob URLs exist only for the current beat and its neighbours: created on entering that window, revoked on leaving.
+// Blob URLs exist only for the current beat and its neighbours: the shown beat's is made when it is shown, its
+// neighbours' and the revocations once it is in front (so the front element never loses its source, and no
+// neighbour's base64 is decoded before the shown clip has its source).
 const urls = new Map();
 function blobUrl(i) {
   if (!urls.has(i)) {
@@ -67,11 +71,9 @@ function blobUrl(i) {
   }
   return urls.get(i);
 }
-function keepWindow(c) {
-  for (let i = Math.max(0, c - 1); i <= Math.min(M.beats.length - 1, c + 1); i++) blobUrl(i);
-}
-function dropOutside(c) {
+function windowAt(c) {
   for (const [i, u] of urls) if (Math.abs(i - c) > 1) { URL.revokeObjectURL(u); urls.delete(i); }
+  for (let i = Math.max(0, c - 1); i <= Math.min(M.beats.length - 1, c + 1); i++) blobUrl(i);
 }
 
 // Every show is a fresh <video> under the front one: it loads, seeks paused to the middle of the wanted frame (an
@@ -82,21 +84,22 @@ let front = null, shows = 0;
 function release(v) { v.pause(); v.removeAttribute("src"); v.load(); v.remove(); }
 function show({beat, frame, play}) {
   const mine = ++shows, v = document.createElement("video");
-  keepWindow(beat);
   v.muted = true; v.playsInline = true; v.preload = "auto"; v.loop = M.beats[beat].kind === "loop";
-  v.addEventListener("loadeddata", () => {
+  v.addEventListener("loadeddata", () => { v.currentTime = (frame + 0.5) / M.fps; }, {once: true});
+  v.addEventListener("seeked", () => {
     if (mine !== shows) return release(v);
-    v.addEventListener("seeked", () => {
-      if (mine !== shows) return release(v);
-      v.style.zIndex = 1;
-      if (front) release(front);
-      front = v;
-      dropOutside(beat);
-      if (play) v.play();
-    }, {once: true});
-    v.currentTime = (frame + 0.5) / M.fps;
+    v.style.zIndex = 1;
+    if (front) release(front);
+    front = v;
+    windowAt(beat);
+    if (play) v.play().catch((e) => { if (e.name !== "AbortError") throw e; });  // AbortError: a newer show paused it
   }, {once: true});
-  v.addEventListener("error", () => { if (mine !== shows) release(v); else throw new Error("clip " + beat + " failed to load"); });
+  v.addEventListener("error", () => {
+    if (mine !== shows) return release(v);
+    document.body.classList.add("failed");
+    notice.textContent = `${M.beats[beat].title}: the clip failed to load`;
+    throw new Error(`clip ${beat} failed to load`);
+  });
   v.src = blobUrl(beat);
   stage.prepend(v);
 }
@@ -106,7 +109,7 @@ const entries = new Map();
 if (M.transcript !== "none") {
   const panel = document.createElement("aside");
   panel.id = "transcript";
-  for (const [slug, title] of Object.entries(M.chapters)) {
+  for (const [slug, title] of M.chapters) {
     panel.append(Object.assign(document.createElement("h2"), {textContent: title}));
     for (const b of M.beats.filter((b) => b.chapter === slug)) {
       const entry = document.createElement("section");
@@ -135,7 +138,7 @@ function act(action, to) {
   if (r.kind === "boundary") {
     document.body.classList.add("boundary");
     clearTimeout(flashing);
-    flashing = setTimeout(() => document.body.classList.remove("boundary"), 300);  // a visible blink, like the Presenter's
+    flashing = setTimeout(() => document.body.classList.remove("boundary"), 300);  // judgement: seen, gone by the next press
     return;
   }
   position = r.position;
@@ -146,7 +149,7 @@ function act(action, to) {
 
 const jump = document.getElementById("jump");
 jump.append(Object.assign(new Option("Before the first beat", ""), {disabled: true}));  // shown at Before only
-for (const [slug, title] of Object.entries(M.chapters)) {
+for (const [slug, title] of M.chapters) {
   const group = document.createElement("optgroup");
   group.label = title;
   for (const b of M.beats) if (b.chapter === slug) group.append(new Option(b.title, b.slug));
